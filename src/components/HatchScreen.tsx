@@ -14,9 +14,10 @@ type Props = {
   username: string;
   onHatch: (name: string) => void;
   onLogOut: () => void;
+  onCancel?: () => void;
 };
 
-export const HatchScreen: React.FC<Props> = ({ username, onHatch, onLogOut }) => {
+export const HatchScreen: React.FC<Props> = ({ username, onHatch, onLogOut, onCancel }) => {
   const [name, setName] = useState('');
   return (
     <KeyboardAvoidingView
@@ -59,6 +60,11 @@ export const HatchScreen: React.FC<Props> = ({ username, onHatch, onLogOut }) =>
       >
         <Text style={styles.buttonText}>GET AN EGG!</Text>
       </Pressable>
+      {onCancel && (
+        <Pressable onPress={onCancel} style={styles.cancel} hitSlop={8}>
+          <Text style={styles.cancelText}>← back to my pets</Text>
+        </Pressable>
+      )}
     </KeyboardAvoidingView>
   );
 };
@@ -151,6 +157,17 @@ const styles = StyleSheet.create({
     fontFamily: 'Courier',
     fontSize: 16,
     fontWeight: 'bold',
+    letterSpacing: 2,
+  },
+  cancel: {
+    marginTop: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  cancelText: {
+    color: '#8a76c0',
+    fontFamily: 'Courier',
+    fontSize: 12,
     letterSpacing: 2,
   },
 });
