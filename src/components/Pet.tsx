@@ -143,9 +143,9 @@ export const Pet: React.FC<Props> = ({ pet }) => {
         </Animated.Text>
       )}
       {mood && <Text style={styles.mood}>{mood}</Text>}
-      {pet.poops > 0 && pet.stage !== 'egg' && pet.stage !== 'dead' && (
+      {Math.floor(pet.poops) > 0 && pet.stage !== 'egg' && pet.stage !== 'dead' && (
         <View style={styles.poopRow}>
-          {Array.from({ length: Math.min(pet.poops, 4) }).map((_, i) => (
+          {Array.from({ length: Math.min(Math.floor(pet.poops), 4) }).map((_, i) => (
             <Text key={i} style={styles.poop}>💩</Text>
           ))}
         </View>
