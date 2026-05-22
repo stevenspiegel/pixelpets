@@ -1,26 +1,26 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Image, StyleSheet, Animated, Easing } from 'react-native';
 import { PetState } from '../types';
+import { STAGE_BABY_AT } from '../state/usePet';
 
 type Props = {
   pet: PetState;
 };
 
 const stageEmoji = (pet: PetState): string => {
-  switch (pet.stage) {
-    case 'baby':
-      return '🐣';
-    case 'child':
-      return '🐤';
-    case 'teen':
-      return '🐥';
-    case 'adult':
-      return pet.species;
-    case 'dead':
-      return '👻';
-    default:
-      return '🥚';
-  }
+  if (pet.stage === 'dead') return '👻';
+  if (pet.stage === 'egg') return '🥚';
+  // baby, child, teen, adult all show the actual species — sized
+  // differently per stage so the pet still visibly grows up.
+  return pet.species;
+};
+
+const formatHatchRemaining = (secondsLeft: number) => {
+  const s = Math.max(0, Math.ceil(secondsLeft));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}m ${rem.toString().padStart(2, '0')}s`;
 };
 
 const moodEmoji = (pet: PetState): string | null => {
@@ -123,13 +123,30 @@ export const Pet: React.FC<Props> = ({ pet }) => {
           );
         })}
       {pet.stage === 'egg' ? (
-        <Animated.View style={[styles.eggBox, { transform: [{ translateY }] }]}>
-          <Image
-            source={require('../../assets/egg.gif')}
-            style={styles.egg}
-            resizeMode="contain"
-          />
-        </Animated.View>
+        <View style={styles.eggColumn}>
+          <Animated.View style={[styles.eggBox, { transform: [{ translateY }] }]}>
+            <Image
+              source={require('../../assets/egg.gif')}
+              style={styles.egg}
+              resizeMode="contain"
+            />
+          </Animated.View>
+          <View style={styles.hatchProgress}>
+            <View style={styles.hatchTrack}>
+              <View
+                style={[
+                  styles.hatchFill,
+                  {
+                    width: `${Math.min(100, (pet.age / STAGE_BABY_AT) * 100)}%`,
+                  },
+                ]}
+              />
+            </View>
+            <Text style={styles.hatchLabel}>
+              Hatching in {formatHatchRemaining(STAGE_BABY_AT - pet.age)}
+            </Text>
+          </View>
+        </View>
       ) : (
         <Animated.Text
           style={[
@@ -161,6 +178,9 @@ const styles = StyleSheet.create({
     minHeight: 220,
     position: 'relative',
   },
+  eggColumn: {
+    alignItems: 'center',
+  },
   eggBox: {
     width: 180,
     height: 180,
@@ -170,6 +190,32 @@ const styles = StyleSheet.create({
   egg: {
     width: 180,
     height: 180,
+  },
+  hatchProgress: {
+    width: 220,
+    marginTop: 4,
+    alignItems: 'center',
+  },
+  hatchTrack: {
+    width: '100%',
+    height: 10,
+    backgroundColor: '#2a1a4a',
+    borderRadius: 2,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#0d0620',
+  },
+  hatchFill: {
+    height: '100%',
+    backgroundColor: '#ffd24d',
+  },
+  hatchLabel: {
+    fontFamily: 'Courier',
+    color: '#2a1a4a',
+    fontSize: 11,
+    marginTop: 4,
+    letterSpacing: 1,
+    fontWeight: 'bold',
   },
   sprite: {
     fontSize: 140,

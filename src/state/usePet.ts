@@ -72,10 +72,11 @@ const migratePet = (pet: PetState): PetState => {
 
 const TICK_MS = 10000;
 
-const STAGE_BABY_AT = 300;
-const STAGE_CHILD_AT = 7200;
-const STAGE_TEEN_AT = 28800;
-const STAGE_ADULT_AT = 86400;
+// Life-stage thresholds (seconds since birth).
+export const STAGE_BABY_AT = 300;     // 5 min — egg hatches
+const STAGE_CHILD_AT = 7200;   // 2 hr
+const STAGE_TEEN_AT = 28800;   // 8 hr
+const STAGE_ADULT_AT = 86400;  // 24 hr
 
 const HUNGER_DRAIN = 0.01;
 const HAPPINESS_DRAIN = 0.008;

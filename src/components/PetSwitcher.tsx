@@ -19,14 +19,9 @@ const RARITY_COLOR: Record<Rarity, string> = {
 };
 
 const tileEmoji = (pet: PetState): string => {
-  switch (pet.stage) {
-    case 'egg': return '🥚';
-    case 'baby': return '🐣';
-    case 'child': return '🐤';
-    case 'teen': return '🐥';
-    case 'dead': return '👻';
-    default: return pet.species;
-  }
+  if (pet.stage === 'egg') return '🥚';
+  if (pet.stage === 'dead') return '👻';
+  return pet.species;
 };
 
 export const PetSwitcher: React.FC<Props> = ({
