@@ -3,11 +3,51 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PetState, ActionKind, LifeStage } from '../types';
 
 const STORAGE_PREFIX = '@pixelpets/pet/v1/';
-const TICK_MS = 4000;
 const storageKey = (userId: string) => `${STORAGE_PREFIX}${userId}`;
 const SPECIES_POOL = ['🦊', '🐱', '🐶', '🐰', '🐲', '🦄', '🐸', '🐼', '🐧', '🦉'];
 
+// How often the UI re-applies decay while the app is foregrounded.
+const TICK_MS = 10000;
+
+// Life-stage thresholds (seconds since birth).
+const STAGE_BABY_AT = 300;     // 5 min — egg hatches
+const STAGE_CHILD_AT = 7200;   // 2 hr
+const STAGE_TEEN_AT = 28800;   // 8 hr
+const STAGE_ADULT_AT = 86400;  // 24 hr
+
+// Per-active-second stat drain rates (out of 100).
+const HUNGER_DRAIN = 0.01;     // ~2.8 hr full → empty
+const HAPPINESS_DRAIN = 0.008; // ~3.5 hr
+const CLEAN_DRAIN = 0.005;     // ~5.5 hr
+const ENERGY_DRAIN = 0.007;    // ~4 hr
+const ENERGY_GAIN_SLEEPING = 0.03; // full energy from a ~55 min nap
+const POOP_INTERVAL_SEC = 3600;    // one poop every ~1 hr of active time
+
+const HEALTH_DRAIN_HUNGRY = 0.012;
+const HEALTH_DRAIN_SAD = 0.006;
+const HEALTH_DRAIN_DIRTY = 0.005;
+const HEALTH_DRAIN_SICK = 0.008;
+const HEALTH_RECOVER_HAPPY = 0.003;
+
+// Per scaled-second probability of getting sick when poops have piled up.
+const SICK_RATE = 0.0002;
+
+// When a tick gap exceeds OFFLINE_THRESHOLD_SEC (browser closed, tab
+// backgrounded, machine asleep) only OFFLINE_MULTIPLIER of the extra time
+// counts toward decay. e.g. with threshold=30s and multiplier=0.1, an hour
+// away ≈ 30s + (3600-30)*0.1 ≈ 6.5 min of in-game decay.
+const OFFLINE_THRESHOLD_SEC = 30;
+const OFFLINE_MULTIPLIER = 0.1;
+
 const clamp = (n: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n));
+
+const scaleElapsed = (rawElapsed: number): number => {
+  if (rawElapsed <= OFFLINE_THRESHOLD_SEC) return rawElapsed;
+  return (
+    OFFLINE_THRESHOLD_SEC +
+    (rawElapsed - OFFLINE_THRESHOLD_SEC) * OFFLINE_MULTIPLIER
+  );
+};
 
 const createPet = (name: string): PetState => ({
   name: name || 'Pixel',
@@ -27,22 +67,24 @@ const createPet = (name: string): PetState => ({
 });
 
 const stageFromAge = (ageSeconds: number): LifeStage => {
-  if (ageSeconds < 20) return 'egg';
-  if (ageSeconds < 120) return 'baby';
-  if (ageSeconds < 360) return 'child';
-  if (ageSeconds < 900) return 'teen';
+  if (ageSeconds < STAGE_BABY_AT) return 'egg';
+  if (ageSeconds < STAGE_CHILD_AT) return 'baby';
+  if (ageSeconds < STAGE_TEEN_AT) return 'child';
+  if (ageSeconds < STAGE_ADULT_AT) return 'teen';
   return 'adult';
 };
 
 const applyDecay = (pet: PetState, now: number): PetState => {
   if (pet.stage === 'dead') return pet;
-  const elapsedSec = Math.max(0, (now - pet.lastTick) / 1000);
-  if (elapsedSec < 0.5) return pet;
+  const rawElapsed = Math.max(0, (now - pet.lastTick) / 1000);
+  if (rawElapsed < 0.5) return pet;
 
+  const scaledElapsed = scaleElapsed(rawElapsed);
   const sleepMultiplier = pet.asleep ? 0.25 : 1;
   const next: PetState = { ...pet };
 
-  next.age = pet.age + elapsedSec;
+  // Age uses raw elapsed — the pet keeps growing up even while you're away.
+  next.age = pet.age + rawElapsed;
   next.stage = stageFromAge(next.age);
 
   if (next.stage === 'egg') {
@@ -50,34 +92,37 @@ const applyDecay = (pet: PetState, now: number): PetState => {
     return next;
   }
 
-  next.hunger = clamp(pet.hunger - elapsedSec * 0.9 * sleepMultiplier);
-  next.happiness = clamp(pet.happiness - elapsedSec * 0.7 * sleepMultiplier);
-  next.cleanliness = clamp(pet.cleanliness - elapsedSec * 0.4);
+  next.hunger = clamp(pet.hunger - scaledElapsed * HUNGER_DRAIN * sleepMultiplier);
+  next.happiness = clamp(
+    pet.happiness - scaledElapsed * HAPPINESS_DRAIN * sleepMultiplier
+  );
+  next.cleanliness = clamp(pet.cleanliness - scaledElapsed * CLEAN_DRAIN);
   next.energy = pet.asleep
-    ? clamp(pet.energy + elapsedSec * 2.5)
-    : clamp(pet.energy - elapsedSec * 0.6);
+    ? clamp(pet.energy + scaledElapsed * ENERGY_GAIN_SLEEPING)
+    : clamp(pet.energy - scaledElapsed * ENERGY_DRAIN);
 
-  const ticks = Math.floor(elapsedSec / 25);
-  if (ticks > 0 && !pet.asleep) {
-    next.poops = pet.poops + ticks;
+  // Poops accumulate as a fractional counter; the UI floors for display.
+  if (!pet.asleep) {
+    next.poops = Math.min(pet.poops + scaledElapsed / POOP_INTERVAL_SEC, 8);
   }
 
-  if (next.poops >= 2 && Math.random() < 0.05) {
-    next.sick = true;
+  if (Math.floor(next.poops) >= 2 && !pet.sick) {
+    const sickProb = 1 - Math.exp(-scaledElapsed * SICK_RATE);
+    if (Math.random() < sickProb) next.sick = true;
   }
 
   let healthDelta = 0;
-  if (next.hunger <= 0) healthDelta -= elapsedSec * 1.2;
-  if (next.happiness <= 0) healthDelta -= elapsedSec * 0.6;
-  if (next.cleanliness <= 0) healthDelta -= elapsedSec * 0.5;
-  if (next.sick) healthDelta -= elapsedSec * 0.8;
+  if (next.hunger <= 0) healthDelta -= scaledElapsed * HEALTH_DRAIN_HUNGRY;
+  if (next.happiness <= 0) healthDelta -= scaledElapsed * HEALTH_DRAIN_SAD;
+  if (next.cleanliness <= 0) healthDelta -= scaledElapsed * HEALTH_DRAIN_DIRTY;
+  if (next.sick) healthDelta -= scaledElapsed * HEALTH_DRAIN_SICK;
   if (
     next.hunger > 60 &&
     next.happiness > 60 &&
     next.cleanliness > 60 &&
     !next.sick
   ) {
-    healthDelta += elapsedSec * 0.3;
+    healthDelta += scaledElapsed * HEALTH_RECOVER_HAPPY;
   }
   next.health = clamp(pet.health + healthDelta);
   if (next.health <= 0) {
