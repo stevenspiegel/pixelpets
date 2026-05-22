@@ -15,8 +15,10 @@ import { ActionButton } from './ActionButton';
 
 type Props = {
   pet: PetState;
+  username: string;
   onAct: (kind: ActionKind) => void;
   onReset: () => void;
+  onLogOut: () => void;
 };
 
 const formatAge = (seconds: number) => {
@@ -42,7 +44,13 @@ const confirmReset = (onReset: () => void) => {
   ]);
 };
 
-export const GameScreen: React.FC<Props> = ({ pet, onAct, onReset }) => {
+export const GameScreen: React.FC<Props> = ({
+  pet,
+  username,
+  onAct,
+  onReset,
+  onLogOut,
+}) => {
   const status = useMemo(() => {
     if (pet.stage === 'dead') return 'has passed away…';
     if (pet.stage === 'egg') return 'is incubating…';
@@ -60,6 +68,12 @@ export const GameScreen: React.FC<Props> = ({ pet, onAct, onReset }) => {
 
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
+      <View style={styles.topBar}>
+        <Text style={styles.trainer}>@{username}</Text>
+        <Pressable onPress={onLogOut} hitSlop={8}>
+          <Text style={styles.logout}>LOG OUT</Text>
+        </Pressable>
+      </View>
       <View style={styles.header}>
         <Text style={styles.name}>{pet.name.toUpperCase()}</Text>
         <Text style={styles.stageText}>
@@ -145,6 +159,28 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: 16,
     alignItems: 'center',
+  },
+  topBar: {
+    width: '100%',
+    maxWidth: 380,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  trainer: {
+    color: '#d6c8ff',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    letterSpacing: 1,
+  },
+  logout: {
+    color: '#ff8aa3',
+    fontFamily: 'Courier',
+    fontSize: 11,
+    fontWeight: 'bold',
+    letterSpacing: 2,
   },
   header: {
     alignItems: 'center',

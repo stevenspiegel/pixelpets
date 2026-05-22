@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PetState, ActionKind, LifeStage } from '../types';
 
-const STORAGE_KEY = '@pixelpets/pet/v1';
+const STORAGE_PREFIX = '@pixelpets/pet/v1/';
 const TICK_MS = 4000;
+const storageKey = (userId: string) => `${STORAGE_PREFIX}${userId}`;
 const SPECIES_POOL = ['🦊', '🐱', '🐶', '🐰', '🐲', '🦄', '🐸', '🐼', '🐧', '🦉'];
 
 const clamp = (n: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n));
@@ -88,35 +89,50 @@ const applyDecay = (pet: PetState, now: number): PetState => {
   return next;
 };
 
-export const usePet = () => {
+export const usePet = (userId: string | null) => {
   const [pet, setPet] = useState<PetState | null>(null);
   const [loaded, setLoaded] = useState(false);
   const petRef = useRef<PetState | null>(null);
+  const userRef = useRef<string | null>(userId);
 
   useEffect(() => {
     petRef.current = pet;
   }, [pet]);
 
   useEffect(() => {
+    userRef.current = userId;
+    if (!userId) {
+      setPet(null);
+      setLoaded(true);
+      return;
+    }
+    let cancelled = false;
+    setLoaded(false);
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        const raw = await AsyncStorage.getItem(storageKey(userId));
+        if (cancelled) return;
         if (raw) {
           const parsed: PetState = JSON.parse(raw);
           setPet(applyDecay(parsed, Date.now()));
+        } else {
+          setPet(null);
         }
       } catch {
-        // ignore corrupt save
+        if (!cancelled) setPet(null);
       } finally {
-        setLoaded(true);
+        if (!cancelled) setLoaded(true);
       }
     })();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   useEffect(() => {
-    if (!pet) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(pet)).catch(() => {});
-  }, [pet]);
+    if (!pet || !userId) return;
+    AsyncStorage.setItem(storageKey(userId), JSON.stringify(pet)).catch(() => {});
+  }, [pet, userId]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -128,12 +144,14 @@ export const usePet = () => {
   }, []);
 
   const hatch = useCallback((name: string) => {
+    if (!userRef.current) return;
     setPet(createPet(name));
   }, []);
 
   const reset = useCallback(() => {
+    const uid = userRef.current;
     setPet(null);
-    AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+    if (uid) AsyncStorage.removeItem(storageKey(uid)).catch(() => {});
   }, []);
 
   const act = useCallback((kind: ActionKind) => {

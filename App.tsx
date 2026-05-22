@@ -9,12 +9,17 @@ import {
   Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { useAuth } from './src/state/useAuth';
 import { usePet } from './src/state/usePet';
+import { LoginScreen } from './src/components/LoginScreen';
 import { HatchScreen } from './src/components/HatchScreen';
 import { GameScreen } from './src/components/GameScreen';
 
 export default function App() {
-  const { pet, loaded, hatch, act, reset } = usePet();
+  const { username, loaded: authLoaded, signUp, logIn, logOut } = useAuth();
+  const { pet, loaded: petLoaded, hatch, act, reset } = usePet(username);
+
+  const ready = authLoaded && (!username || petLoaded);
 
   return (
     <ImageBackground
@@ -24,14 +29,22 @@ export default function App() {
     >
       <View style={styles.overlay}>
         <SafeAreaView style={styles.safe}>
-          {!loaded ? (
+          {!ready ? (
             <View style={styles.center}>
               <ActivityIndicator color="#fff" />
             </View>
+          ) : !username ? (
+            <LoginScreen onLogIn={logIn} onSignUp={signUp} />
           ) : pet ? (
-            <GameScreen pet={pet} onAct={act} onReset={reset} />
+            <GameScreen
+              pet={pet}
+              username={username}
+              onAct={act}
+              onReset={reset}
+              onLogOut={logOut}
+            />
           ) : (
-            <HatchScreen onHatch={hatch} />
+            <HatchScreen username={username} onHatch={hatch} onLogOut={logOut} />
           )}
         </SafeAreaView>
         <StatusBar style="light" />

@@ -11,16 +11,24 @@ import {
 } from 'react-native';
 
 type Props = {
+  username: string;
   onHatch: (name: string) => void;
+  onLogOut: () => void;
 };
 
-export const HatchScreen: React.FC<Props> = ({ onHatch }) => {
+export const HatchScreen: React.FC<Props> = ({ username, onHatch, onLogOut }) => {
   const [name, setName] = useState('');
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={styles.wrap}
     >
+      <View style={styles.topBar}>
+        <Text style={styles.trainer}>@{username}</Text>
+        <Pressable onPress={onLogOut} hitSlop={8}>
+          <Text style={styles.logout}>LOG OUT</Text>
+        </Pressable>
+      </View>
       <Image
         source={require('../../assets/header.png')}
         style={styles.header}
@@ -61,6 +69,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
+  },
+  topBar: {
+    position: 'absolute',
+    top: 12,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  trainer: {
+    color: '#d6c8ff',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    letterSpacing: 1,
+  },
+  logout: {
+    color: '#ff8aa3',
+    fontFamily: 'Courier',
+    fontSize: 11,
+    fontWeight: 'bold',
+    letterSpacing: 2,
   },
   header: {
     width: 280,
