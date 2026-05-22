@@ -3,6 +3,7 @@ export type LifeStage = 'egg' | 'baby' | 'child' | 'teen' | 'adult' | 'dead';
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 
 export type PetState = {
+  id: string;
   name: string;
   species: string;
   rarity: Rarity;

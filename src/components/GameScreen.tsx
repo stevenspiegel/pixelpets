@@ -13,12 +13,17 @@ import { Pet } from './Pet';
 import { StatBar } from './StatBar';
 import { ActionButton } from './ActionButton';
 import { RarityBadge } from './RarityBadge';
+import { PetSwitcher } from './PetSwitcher';
+import { MAX_PETS } from '../state/usePet';
 
 type Props = {
   pet: PetState;
+  pets: PetState[];
   username: string;
   onAct: (kind: ActionKind) => void;
-  onReset: () => void;
+  onSwitchPet: (id: string) => void;
+  onAddNew: () => void;
+  onRemove: () => void;
   onLogOut: () => void;
 };
 
@@ -31,25 +36,29 @@ const formatAge = (seconds: number) => {
   return `${h}h ${m % 60}m`;
 };
 
-const confirmReset = (onReset: () => void) => {
+const confirmRemove = (petName: string, onRemove: () => void) => {
+  const msg = `Release ${petName}? This cannot be undone.`;
   if (Platform.OS === 'web') {
     // eslint-disable-next-line no-alert
-    if (typeof window !== 'undefined' && window.confirm('Start over with a new egg?')) {
-      onReset();
+    if (typeof window !== 'undefined' && window.confirm(msg)) {
+      onRemove();
     }
     return;
   }
-  Alert.alert('Start Over?', 'This will release your current pet.', [
+  Alert.alert('Release pet?', msg, [
     { text: 'Cancel', style: 'cancel' },
-    { text: 'Reset', style: 'destructive', onPress: onReset },
+    { text: 'Release', style: 'destructive', onPress: onRemove },
   ]);
 };
 
 export const GameScreen: React.FC<Props> = ({
   pet,
+  pets,
   username,
   onAct,
-  onReset,
+  onSwitchPet,
+  onAddNew,
+  onRemove,
   onLogOut,
 }) => {
   const status = useMemo(() => {
@@ -74,6 +83,15 @@ export const GameScreen: React.FC<Props> = ({
         <Pressable onPress={onLogOut} hitSlop={8}>
           <Text style={styles.logout}>LOG OUT</Text>
         </Pressable>
+      </View>
+      <View style={styles.switcherWrap}>
+        <PetSwitcher
+          pets={pets}
+          activeId={pet.id}
+          onSwitch={onSwitchPet}
+          onAddNew={onAddNew}
+          maxPets={MAX_PETS}
+        />
       </View>
       <View style={styles.header}>
         <Text style={styles.name}>{pet.name.toUpperCase()}</Text>
@@ -147,9 +165,12 @@ export const GameScreen: React.FC<Props> = ({
         </View>
       )}
 
-      <Pressable onPress={() => confirmReset(onReset)} style={styles.resetButton}>
+      <Pressable
+        onPress={() => confirmRemove(pet.name, onRemove)}
+        style={styles.resetButton}
+      >
         <Text style={styles.resetText}>
-          {isDead ? 'NEW EGG' : 'reset'}
+          {isDead ? `bury ${pet.name.toLowerCase()}` : `release ${pet.name.toLowerCase()}`}
         </Text>
       </Pressable>
     </ScrollView>
@@ -183,6 +204,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: 'bold',
     letterSpacing: 2,
+  },
+  switcherWrap: {
+    width: '100%',
+    maxWidth: 380,
+    marginBottom: 8,
   },
   header: {
     alignItems: 'center',

@@ -2,8 +2,12 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PetState, ActionKind, LifeStage, Rarity } from '../types';
 
-const STORAGE_PREFIX = '@pixelpets/pet/v1/';
-const storageKey = (userId: string) => `${STORAGE_PREFIX}${userId}`;
+const STORAGE_PREFIX_V1 = '@pixelpets/pet/v1/';   // legacy single-pet save
+const STORAGE_PREFIX_V2 = '@pixelpets/pets/v2/';  // collection of pets
+const v1Key = (userId: string) => `${STORAGE_PREFIX_V1}${userId}`;
+const v2Key = (userId: string) => `${STORAGE_PREFIX_V2}${userId}`;
+
+export const MAX_PETS = 8;
 
 // Only full-body emoji — face-only emoji (🐶 🐱 🦁 etc.) are intentionally
 // excluded so every newly hatched pet shows as a recognizable creature
@@ -16,8 +20,6 @@ const SPECIES_BY_RARITY: Record<Rarity, readonly string[]> = {
   legendary: ['🐉', '🦄', '🧜', '🦖', '🦕', '🐙'],
 };
 
-// Legacy face-only emoji from earlier hatches — kept solely so old saves
-// classify into the right tier. New hatches only draw from SPECIES_BY_RARITY.
 const LEGACY_RARITY: Record<string, Rarity> = {
   '🐶': 'common',  '🐱': 'common',  '🐰': 'common',
   '🐭': 'common',  '🐹': 'common',
@@ -58,27 +60,29 @@ const rarityForSpecies = (species: string): Rarity => {
   return LEGACY_RARITY[species] ?? 'common';
 };
 
+const makeId = () =>
+  `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
 const migratePet = (pet: PetState): PetState => {
-  if (pet.rarity) return pet;
-  return { ...pet, rarity: rarityForSpecies(pet.species) };
+  let next = pet;
+  if (!next.rarity) next = { ...next, rarity: rarityForSpecies(next.species) };
+  if (!next.id) next = { ...next, id: makeId() };
+  return next;
 };
 
-// How often the UI re-applies decay while the app is foregrounded.
 const TICK_MS = 10000;
 
-// Life-stage thresholds (seconds since birth).
-const STAGE_BABY_AT = 300;     // 5 min — egg hatches
-const STAGE_CHILD_AT = 7200;   // 2 hr
-const STAGE_TEEN_AT = 28800;   // 8 hr
-const STAGE_ADULT_AT = 86400;  // 24 hr
+const STAGE_BABY_AT = 300;
+const STAGE_CHILD_AT = 7200;
+const STAGE_TEEN_AT = 28800;
+const STAGE_ADULT_AT = 86400;
 
-// Per-active-second stat drain rates (out of 100).
-const HUNGER_DRAIN = 0.01;     // ~2.8 hr full → empty
-const HAPPINESS_DRAIN = 0.008; // ~3.5 hr
-const CLEAN_DRAIN = 0.005;     // ~5.5 hr
-const ENERGY_DRAIN = 0.007;    // ~4 hr
-const ENERGY_GAIN_SLEEPING = 0.03; // full energy from a ~55 min nap
-const POOP_INTERVAL_SEC = 3600;    // one poop every ~1 hr of active time
+const HUNGER_DRAIN = 0.01;
+const HAPPINESS_DRAIN = 0.008;
+const CLEAN_DRAIN = 0.005;
+const ENERGY_DRAIN = 0.007;
+const ENERGY_GAIN_SLEEPING = 0.03;
+const POOP_INTERVAL_SEC = 3600;
 
 const HEALTH_DRAIN_HUNGRY = 0.012;
 const HEALTH_DRAIN_SAD = 0.006;
@@ -86,13 +90,8 @@ const HEALTH_DRAIN_DIRTY = 0.005;
 const HEALTH_DRAIN_SICK = 0.008;
 const HEALTH_RECOVER_HAPPY = 0.003;
 
-// Per scaled-second probability of getting sick when poops have piled up.
 const SICK_RATE = 0.0002;
 
-// When a tick gap exceeds OFFLINE_THRESHOLD_SEC (browser closed, tab
-// backgrounded, machine asleep) only OFFLINE_MULTIPLIER of the extra time
-// counts toward decay. e.g. with threshold=30s and multiplier=0.1, an hour
-// away ≈ 30s + (3600-30)*0.1 ≈ 6.5 min of in-game decay.
 const OFFLINE_THRESHOLD_SEC = 30;
 const OFFLINE_MULTIPLIER = 0.1;
 
@@ -109,6 +108,7 @@ const scaleElapsed = (rawElapsed: number): number => {
 const createPet = (name: string): PetState => {
   const { species, rarity } = rollSpecies();
   return {
+    id: makeId(),
     name: name || 'Pixel',
     species,
     rarity,
@@ -144,7 +144,6 @@ const applyDecay = (pet: PetState, now: number): PetState => {
   const sleepMultiplier = pet.asleep ? 0.25 : 1;
   const next: PetState = { ...pet };
 
-  // Age uses raw elapsed — the pet keeps growing up even while you're away.
   next.age = pet.age + rawElapsed;
   next.stage = stageFromAge(next.age);
 
@@ -162,7 +161,6 @@ const applyDecay = (pet: PetState, now: number): PetState => {
     ? clamp(pet.energy + scaledElapsed * ENERGY_GAIN_SLEEPING)
     : clamp(pet.energy - scaledElapsed * ENERGY_DRAIN);
 
-  // Poops accumulate as a fractional counter; the UI floors for display.
   if (!pet.asleep) {
     next.poops = Math.min(pet.poops + scaledElapsed / POOP_INTERVAL_SEC, 8);
   }
@@ -195,40 +193,116 @@ const applyDecay = (pet: PetState, now: number): PetState => {
   return next;
 };
 
+const applyAction = (pet: PetState, kind: ActionKind, now: number): PetState => {
+  if (pet.stage === 'dead' || pet.stage === 'egg') return pet;
+  const base = applyDecay(pet, now);
+  switch (kind) {
+    case 'feed':
+      if (base.asleep) return base;
+      return {
+        ...base,
+        hunger: clamp(base.hunger + 28),
+        cleanliness: clamp(base.cleanliness - 4),
+        happiness: clamp(base.happiness + 3),
+      };
+    case 'play':
+      if (base.asleep) return base;
+      if (base.energy < 10) return base;
+      return {
+        ...base,
+        happiness: clamp(base.happiness + 22),
+        energy: clamp(base.energy - 12),
+        hunger: clamp(base.hunger - 4),
+      };
+    case 'clean':
+      return {
+        ...base,
+        cleanliness: clamp(base.cleanliness + 35),
+        poops: 0,
+      };
+    case 'sleep':
+      return { ...base, asleep: true };
+    case 'wake':
+      return { ...base, asleep: false };
+    case 'medicine':
+      return {
+        ...base,
+        sick: false,
+        health: clamp(base.health + 15),
+      };
+    default:
+      return base;
+  }
+};
+
+type Collection = {
+  pets: PetState[];
+  activeId: string | null;
+};
+
+const EMPTY: Collection = { pets: [], activeId: null };
+
+const tickAll = (col: Collection, now: number): Collection => {
+  if (col.pets.length === 0) return col;
+  const next = col.pets.map((p) => applyDecay(p, now));
+  // Reference equality check — if every pet was unchanged, return original
+  let changed = false;
+  for (let i = 0; i < next.length; i++) {
+    if (next[i] !== col.pets[i]) { changed = true; break; }
+  }
+  return changed ? { ...col, pets: next } : col;
+};
+
+const loadCollection = async (userId: string): Promise<Collection> => {
+  try {
+    const v2 = await AsyncStorage.getItem(v2Key(userId));
+    if (v2) {
+      const parsed = JSON.parse(v2) as Collection;
+      const migrated = parsed.pets.map(migratePet);
+      const validActive = migrated.find((p) => p.id === parsed.activeId)?.id
+        ?? migrated[0]?.id
+        ?? null;
+      return { pets: migrated, activeId: validActive };
+    }
+    // Legacy migration: a single-pet v1 save becomes a one-element collection.
+    const v1 = await AsyncStorage.getItem(v1Key(userId));
+    if (v1) {
+      const pet = migratePet(JSON.parse(v1) as PetState);
+      return { pets: [pet], activeId: pet.id };
+    }
+  } catch {
+    // fall through
+  }
+  return EMPTY;
+};
+
 export const usePet = (userId: string | null) => {
-  const [pet, setPet] = useState<PetState | null>(null);
+  const [col, setCol] = useState<Collection>(EMPTY);
   const [loaded, setLoaded] = useState(false);
-  const petRef = useRef<PetState | null>(null);
+  const colRef = useRef<Collection>(col);
   const userRef = useRef<string | null>(userId);
 
   useEffect(() => {
-    petRef.current = pet;
-  }, [pet]);
+    colRef.current = col;
+  }, [col]);
 
   useEffect(() => {
     userRef.current = userId;
     if (!userId) {
-      setPet(null);
+      setCol(EMPTY);
       setLoaded(true);
       return;
     }
     let cancelled = false;
     setLoaded(false);
     (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(storageKey(userId));
-        if (cancelled) return;
-        if (raw) {
-          const parsed: PetState = migratePet(JSON.parse(raw));
-          setPet(applyDecay(parsed, Date.now()));
-        } else {
-          setPet(null);
-        }
-      } catch {
-        if (!cancelled) setPet(null);
-      } finally {
-        if (!cancelled) setLoaded(true);
-      }
+      const loaded = await loadCollection(userId);
+      if (cancelled) return;
+      setCol({
+        pets: loaded.pets.map((p) => applyDecay(p, Date.now())),
+        activeId: loaded.activeId,
+      });
+      setLoaded(true);
     })();
     return () => {
       cancelled = true;
@@ -236,75 +310,62 @@ export const usePet = (userId: string | null) => {
   }, [userId]);
 
   useEffect(() => {
-    if (!pet || !userId) return;
-    AsyncStorage.setItem(storageKey(userId), JSON.stringify(pet)).catch(() => {});
-  }, [pet, userId]);
+    if (!userId || !loaded) return;
+    AsyncStorage.setItem(v2Key(userId), JSON.stringify(col)).catch(() => {});
+  }, [col, userId, loaded]);
 
   useEffect(() => {
     const id = setInterval(() => {
-      const current = petRef.current;
-      if (!current || current.stage === 'dead') return;
-      setPet(applyDecay(current, Date.now()));
+      const current = colRef.current;
+      if (current.pets.length === 0) return;
+      setCol((c) => tickAll(c, Date.now()));
     }, TICK_MS);
     return () => clearInterval(id);
   }, []);
 
   const hatch = useCallback((name: string) => {
     if (!userRef.current) return;
-    setPet(createPet(name));
-  }, []);
-
-  const reset = useCallback(() => {
-    const uid = userRef.current;
-    setPet(null);
-    if (uid) AsyncStorage.removeItem(storageKey(uid)).catch(() => {});
-  }, []);
-
-  const act = useCallback((kind: ActionKind) => {
-    setPet((current) => {
-      if (!current || current.stage === 'dead') return current;
-      if (current.stage === 'egg') return current;
-      const now = Date.now();
-      const base = applyDecay(current, now);
-      switch (kind) {
-        case 'feed':
-          if (base.asleep) return base;
-          return {
-            ...base,
-            hunger: clamp(base.hunger + 28),
-            cleanliness: clamp(base.cleanliness - 4),
-            happiness: clamp(base.happiness + 3),
-          };
-        case 'play':
-          if (base.asleep) return base;
-          if (base.energy < 10) return base;
-          return {
-            ...base,
-            happiness: clamp(base.happiness + 22),
-            energy: clamp(base.energy - 12),
-            hunger: clamp(base.hunger - 4),
-          };
-        case 'clean':
-          return {
-            ...base,
-            cleanliness: clamp(base.cleanliness + 35),
-            poops: 0,
-          };
-        case 'sleep':
-          return { ...base, asleep: true };
-        case 'wake':
-          return { ...base, asleep: false };
-        case 'medicine':
-          return {
-            ...base,
-            sick: false,
-            health: clamp(base.health + 15),
-          };
-        default:
-          return base;
-      }
+    setCol((c) => {
+      if (c.pets.length >= MAX_PETS) return c;
+      const pet = createPet(name);
+      return { pets: [...c.pets, pet], activeId: pet.id };
     });
   }, []);
 
-  return { pet, loaded, hatch, act, reset };
+  const switchPet = useCallback((id: string) => {
+    setCol((c) => (c.pets.some((p) => p.id === id) ? { ...c, activeId: id } : c));
+  }, []);
+
+  const removePet = useCallback((id: string) => {
+    setCol((c) => {
+      const remaining = c.pets.filter((p) => p.id !== id);
+      const activeId =
+        c.activeId === id ? remaining[0]?.id ?? null : c.activeId;
+      return { pets: remaining, activeId };
+    });
+  }, []);
+
+  const act = useCallback((kind: ActionKind) => {
+    setCol((c) => {
+      if (!c.activeId) return c;
+      const now = Date.now();
+      const pets = c.pets.map((p) =>
+        p.id === c.activeId ? applyAction(p, kind, now) : p
+      );
+      return { ...c, pets };
+    });
+  }, []);
+
+  const activePet = col.pets.find((p) => p.id === col.activeId) ?? null;
+
+  return {
+    pets: col.pets,
+    activePet,
+    activeId: col.activeId,
+    loaded,
+    hatch,
+    switchPet,
+    removePet,
+    act,
+  };
 };
