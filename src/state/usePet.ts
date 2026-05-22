@@ -1,10 +1,67 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { PetState, ActionKind, LifeStage } from '../types';
+import { PetState, ActionKind, LifeStage, Rarity } from '../types';
 
 const STORAGE_PREFIX = '@pixelpets/pet/v1/';
 const storageKey = (userId: string) => `${STORAGE_PREFIX}${userId}`;
-const SPECIES_POOL = ['🦊', '🐱', '🐶', '🐰', '🐲', '🦄', '🐸', '🐼', '🐧', '🦉'];
+
+// Only full-body emoji — face-only emoji (🐶 🐱 🦁 etc.) are intentionally
+// excluded so every newly hatched pet shows as a recognizable creature
+// rather than a floating head.
+const SPECIES_BY_RARITY: Record<Rarity, readonly string[]> = {
+  common:    ['🐕', '🐈', '🐇', '🐁', '🐀', '🐦', '🐢', '🐠'],
+  uncommon:  ['🦊', '🦝', '🦨', '🐍', '🦎', '🦇', '🦔', '🐧'],
+  rare:      ['🦡', '🦌', '🦥', '🦉', '🦅', '🦘', '🦦', '🦫'],
+  epic:      ['🐅', '🐘', '🦏', '🐊', '🦈', '🦒', '🦚', '🦬'],
+  legendary: ['🐉', '🦄', '🧜', '🦖', '🦕', '🐙'],
+};
+
+// Legacy face-only emoji from earlier hatches — kept solely so old saves
+// classify into the right tier. New hatches only draw from SPECIES_BY_RARITY.
+const LEGACY_RARITY: Record<string, Rarity> = {
+  '🐶': 'common',  '🐱': 'common',  '🐰': 'common',
+  '🐭': 'common',  '🐹': 'common',
+  '🐸': 'uncommon',
+  '🐺': 'rare',    '🐼': 'rare',    '🐨': 'rare',
+  '🦁': 'epic',    '🐯': 'epic',    '🦛': 'epic',
+  '🐲': 'legendary',
+};
+
+const RARITY_WEIGHTS: Record<Rarity, number> = {
+  common: 60,
+  uncommon: 25,
+  rare: 10,
+  epic: 4,
+  legendary: 1,
+};
+
+const RARITY_ORDER: readonly Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+
+const rollSpecies = (): { species: string; rarity: Rarity } => {
+  const totalWeight = RARITY_ORDER.reduce((sum, r) => sum + RARITY_WEIGHTS[r], 0);
+  let roll = Math.random() * totalWeight;
+  for (const rarity of RARITY_ORDER) {
+    roll -= RARITY_WEIGHTS[rarity];
+    if (roll <= 0) {
+      const pool = SPECIES_BY_RARITY[rarity];
+      return { species: pool[Math.floor(Math.random() * pool.length)], rarity };
+    }
+  }
+  const pool = SPECIES_BY_RARITY.common;
+  return { species: pool[0], rarity: 'common' };
+};
+
+const rarityForSpecies = (species: string): Rarity => {
+  for (const rarity of RARITY_ORDER) {
+    if (SPECIES_BY_RARITY[rarity].includes(species)) return rarity;
+  }
+  return LEGACY_RARITY[species] ?? 'common';
+};
+
+const migratePet = (pet: PetState): PetState => {
+  if (pet.rarity) return pet;
+  return { ...pet, rarity: rarityForSpecies(pet.species) };
+};
 
 // How often the UI re-applies decay while the app is foregrounded.
 const TICK_MS = 10000;
@@ -49,22 +106,26 @@ const scaleElapsed = (rawElapsed: number): number => {
   );
 };
 
-const createPet = (name: string): PetState => ({
-  name: name || 'Pixel',
-  species: SPECIES_POOL[Math.floor(Math.random() * SPECIES_POOL.length)],
-  stage: 'egg',
-  hunger: 70,
-  happiness: 70,
-  cleanliness: 90,
-  energy: 80,
-  health: 100,
-  age: 0,
-  bornAt: Date.now(),
-  lastTick: Date.now(),
-  asleep: false,
-  poops: 0,
-  sick: false,
-});
+const createPet = (name: string): PetState => {
+  const { species, rarity } = rollSpecies();
+  return {
+    name: name || 'Pixel',
+    species,
+    rarity,
+    stage: 'egg',
+    hunger: 70,
+    happiness: 70,
+    cleanliness: 90,
+    energy: 80,
+    health: 100,
+    age: 0,
+    bornAt: Date.now(),
+    lastTick: Date.now(),
+    asleep: false,
+    poops: 0,
+    sick: false,
+  };
+};
 
 const stageFromAge = (ageSeconds: number): LifeStage => {
   if (ageSeconds < STAGE_BABY_AT) return 'egg';
@@ -158,7 +219,7 @@ export const usePet = (userId: string | null) => {
         const raw = await AsyncStorage.getItem(storageKey(userId));
         if (cancelled) return;
         if (raw) {
-          const parsed: PetState = JSON.parse(raw);
+          const parsed: PetState = migratePet(JSON.parse(raw));
           setPet(applyDecay(parsed, Date.now()));
         } else {
           setPet(null);
