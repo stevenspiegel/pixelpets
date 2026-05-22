@@ -6,12 +6,26 @@ const STORAGE_PREFIX = '@pixelpets/pet/v1/';
 const TICK_MS = 4000;
 const storageKey = (userId: string) => `${STORAGE_PREFIX}${userId}`;
 
+// Only full-body emoji — face-only emoji (🐶 🐱 🦁 etc.) are intentionally
+// excluded so every newly hatched pet shows as a recognizable creature
+// rather than a floating head.
 const SPECIES_BY_RARITY: Record<Rarity, readonly string[]> = {
-  common:    ['🐶', '🐱', '🐰', '🐭', '🐹', '🐦', '🐢', '🐠'],
-  uncommon:  ['🦊', '🦝', '🐸', '🐍', '🦎', '🦇', '🦔', '🐧'],
-  rare:      ['🐺', '🦉', '🦅', '🐼', '🐨', '🦘', '🦦', '🦫'],
-  epic:      ['🦁', '🐯', '🐘', '🦏', '🦛', '🐊', '🦈', '🦒', '🦚'],
-  legendary: ['🦄', '🐲', '🧜', '🦖', '🦕', '🐙'],
+  common:    ['🐕', '🐈', '🐇', '🐁', '🐀', '🐦', '🐢', '🐠'],
+  uncommon:  ['🦊', '🦝', '🦨', '🐍', '🦎', '🦇', '🦔', '🐧'],
+  rare:      ['🦡', '🦌', '🦥', '🦉', '🦅', '🦘', '🦦', '🦫'],
+  epic:      ['🐅', '🐘', '🦏', '🐊', '🦈', '🦒', '🦚', '🦬'],
+  legendary: ['🐉', '🦄', '🧜', '🦖', '🦕', '🐙'],
+};
+
+// Legacy face-only emoji from earlier hatches — kept solely so old saves
+// classify into the right tier. New hatches only draw from SPECIES_BY_RARITY.
+const LEGACY_RARITY: Record<string, Rarity> = {
+  '🐶': 'common',  '🐱': 'common',  '🐰': 'common',
+  '🐭': 'common',  '🐹': 'common',
+  '🐸': 'uncommon',
+  '🐺': 'rare',    '🐼': 'rare',    '🐨': 'rare',
+  '🦁': 'epic',    '🐯': 'epic',    '🦛': 'epic',
+  '🐲': 'legendary',
 };
 
 const RARITY_WEIGHTS: Record<Rarity, number> = {
@@ -42,7 +56,7 @@ const rarityForSpecies = (species: string): Rarity => {
   for (const rarity of RARITY_ORDER) {
     if (SPECIES_BY_RARITY[rarity].includes(species)) return rarity;
   }
-  return 'common';
+  return LEGACY_RARITY[species] ?? 'common';
 };
 
 const migratePet = (pet: PetState): PetState => {
