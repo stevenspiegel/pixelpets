@@ -119,12 +119,6 @@ export const GameScreen: React.FC<Props> = ({
           </View>
         )}
 
-        {isEgg && (
-          <Text style={styles.hint}>
-            Your egg is incubating. Come back in a few minutes!
-          </Text>
-        )}
-
         {isDead && (
           <Text style={[styles.hint, styles.deadHint]}>
             {pet.name} lived for {formatAge(pet.age)}. Rest in pixels.
