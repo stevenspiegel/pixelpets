@@ -12,6 +12,7 @@ import { PetState, ActionKind } from '../types';
 import { Pet } from './Pet';
 import { StatBar } from './StatBar';
 import { ActionButton } from './ActionButton';
+import { RarityBadge } from './RarityBadge';
 
 type Props = {
   pet: PetState;
@@ -79,6 +80,7 @@ export const GameScreen: React.FC<Props> = ({
         <Text style={styles.stageText}>
           {pet.stage.toUpperCase()} · {formatAge(pet.age)}
         </Text>
+        {!isEgg && <RarityBadge rarity={pet.rarity} />}
       </View>
 
       <View style={styles.tama}>

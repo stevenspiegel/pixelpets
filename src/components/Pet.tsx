@@ -35,8 +35,21 @@ const moodEmoji = (pet: PetState): string | null => {
   return null;
 };
 
+const SPARKLE_OFFSETS: { x: number; y: number; delay: number }[] = [
+  { x: -70, y: -30, delay: 0 },
+  { x: 70, y: -10, delay: 400 },
+  { x: -50, y: 50, delay: 800 },
+  { x: 60, y: 60, delay: 1200 },
+];
+
 export const Pet: React.FC<Props> = ({ pet }) => {
   const bob = useRef(new Animated.Value(0)).current;
+  const sparkle = useRef(new Animated.Value(0)).current;
+
+  const showSparkles =
+    pet.stage !== 'egg' &&
+    pet.stage !== 'dead' &&
+    (pet.rarity === 'epic' || pet.rarity === 'legendary');
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -59,6 +72,20 @@ export const Pet: React.FC<Props> = ({ pet }) => {
     return () => loop.stop();
   }, [bob, pet.asleep]);
 
+  useEffect(() => {
+    if (!showSparkles) return;
+    const loop = Animated.loop(
+      Animated.timing(sparkle, {
+        toValue: 1,
+        duration: 2000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [sparkle, showSparkles]);
+
   const translateY = bob.interpolate({
     inputRange: [0, 1],
     outputRange: pet.stage === 'egg' ? [0, -6] : [0, -10],
@@ -68,6 +95,33 @@ export const Pet: React.FC<Props> = ({ pet }) => {
 
   return (
     <View style={styles.wrap}>
+      {showSparkles &&
+        SPARKLE_OFFSETS.map((offset, i) => {
+          const phase = (sparkle as unknown as Animated.Value).interpolate({
+            inputRange: [0, 1],
+            outputRange: [offset.delay / 2000, 1 + offset.delay / 2000],
+          });
+          const opacity = phase.interpolate({
+            inputRange: [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5],
+            outputRange: [0, 1, 0, 0, 0, 1, 0],
+            extrapolate: 'clamp',
+          });
+          return (
+            <Animated.Text
+              key={i}
+              style={[
+                styles.sparkle,
+                {
+                  transform: [{ translateX: offset.x }, { translateY: offset.y }],
+                  opacity,
+                  color: pet.rarity === 'legendary' ? '#ffd24d' : '#cc7fff',
+                },
+              ]}
+            >
+              ✨
+            </Animated.Text>
+          );
+        })}
       {pet.stage === 'egg' ? (
         <Animated.View style={[styles.eggBox, { transform: [{ translateY }] }]}>
           <Image
@@ -143,5 +197,9 @@ const styles = StyleSheet.create({
   poop: {
     fontSize: 22,
     marginHorizontal: 2,
+  },
+  sparkle: {
+    position: 'absolute',
+    fontSize: 22,
   },
 });

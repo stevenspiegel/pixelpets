@@ -1,30 +1,77 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { PetState, ActionKind, LifeStage } from '../types';
+import { PetState, ActionKind, LifeStage, Rarity } from '../types';
 
 const STORAGE_PREFIX = '@pixelpets/pet/v1/';
 const TICK_MS = 4000;
 const storageKey = (userId: string) => `${STORAGE_PREFIX}${userId}`;
-const SPECIES_POOL = ['🦊', '🐱', '🐶', '🐰', '🐲', '🦄', '🐸', '🐼', '🐧', '🦉'];
+
+const SPECIES_BY_RARITY: Record<Rarity, readonly string[]> = {
+  common:    ['🐶', '🐱', '🐰', '🐭', '🐹', '🐦', '🐢', '🐠'],
+  uncommon:  ['🦊', '🦝', '🐸', '🐍', '🦎', '🦇', '🦔', '🐧'],
+  rare:      ['🐺', '🦉', '🦅', '🐼', '🐨', '🦘', '🦦', '🦫'],
+  epic:      ['🦁', '🐯', '🐘', '🦏', '🦛', '🐊', '🦈', '🦒', '🦚'],
+  legendary: ['🦄', '🐲', '🧜', '🦖', '🦕', '🐙'],
+};
+
+const RARITY_WEIGHTS: Record<Rarity, number> = {
+  common: 60,
+  uncommon: 25,
+  rare: 10,
+  epic: 4,
+  legendary: 1,
+};
+
+const RARITY_ORDER: readonly Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+
+const rollSpecies = (): { species: string; rarity: Rarity } => {
+  const totalWeight = RARITY_ORDER.reduce((sum, r) => sum + RARITY_WEIGHTS[r], 0);
+  let roll = Math.random() * totalWeight;
+  for (const rarity of RARITY_ORDER) {
+    roll -= RARITY_WEIGHTS[rarity];
+    if (roll <= 0) {
+      const pool = SPECIES_BY_RARITY[rarity];
+      return { species: pool[Math.floor(Math.random() * pool.length)], rarity };
+    }
+  }
+  const pool = SPECIES_BY_RARITY.common;
+  return { species: pool[0], rarity: 'common' };
+};
+
+const rarityForSpecies = (species: string): Rarity => {
+  for (const rarity of RARITY_ORDER) {
+    if (SPECIES_BY_RARITY[rarity].includes(species)) return rarity;
+  }
+  return 'common';
+};
+
+const migratePet = (pet: PetState): PetState => {
+  if (pet.rarity) return pet;
+  return { ...pet, rarity: rarityForSpecies(pet.species) };
+};
 
 const clamp = (n: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n));
 
-const createPet = (name: string): PetState => ({
-  name: name || 'Pixel',
-  species: SPECIES_POOL[Math.floor(Math.random() * SPECIES_POOL.length)],
-  stage: 'egg',
-  hunger: 70,
-  happiness: 70,
-  cleanliness: 90,
-  energy: 80,
-  health: 100,
-  age: 0,
-  bornAt: Date.now(),
-  lastTick: Date.now(),
-  asleep: false,
-  poops: 0,
-  sick: false,
-});
+const createPet = (name: string): PetState => {
+  const { species, rarity } = rollSpecies();
+  return {
+    name: name || 'Pixel',
+    species,
+    rarity,
+    stage: 'egg',
+    hunger: 70,
+    happiness: 70,
+    cleanliness: 90,
+    energy: 80,
+    health: 100,
+    age: 0,
+    bornAt: Date.now(),
+    lastTick: Date.now(),
+    asleep: false,
+    poops: 0,
+    sick: false,
+  };
+};
 
 const stageFromAge = (ageSeconds: number): LifeStage => {
   if (ageSeconds < 20) return 'egg';
@@ -113,7 +160,7 @@ export const usePet = (userId: string | null) => {
         const raw = await AsyncStorage.getItem(storageKey(userId));
         if (cancelled) return;
         if (raw) {
-          const parsed: PetState = JSON.parse(raw);
+          const parsed: PetState = migratePet(JSON.parse(raw));
           setPet(applyDecay(parsed, Date.now()));
         } else {
           setPet(null);
