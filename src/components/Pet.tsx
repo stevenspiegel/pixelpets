@@ -2,9 +2,18 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, Image, StyleSheet, Animated, Easing } from 'react-native';
 import { PetState } from '../types';
 import { STAGE_BABY_AT } from '../state/usePet';
+import { SPRITES, hasSprite } from '../sprites';
+import { PixelArt } from './PixelArt';
 
 type Props = {
   pet: PetState;
+};
+
+const SPRITE_SIZE_BY_STAGE: Record<string, number> = {
+  baby: 96,
+  child: 128,
+  teen: 160,
+  adult: 168,
 };
 
 const stageEmoji = (pet: PetState): string => {
@@ -147,6 +156,13 @@ export const Pet: React.FC<Props> = ({ pet }) => {
             </Text>
           </View>
         </View>
+      ) : hasSprite(pet.species) && pet.stage !== 'dead' ? (
+        <Animated.View style={{ transform: [{ translateY }] }}>
+          <PixelArt
+            sprite={SPRITES[pet.species]}
+            size={SPRITE_SIZE_BY_STAGE[pet.stage] ?? 160}
+          />
+        </Animated.View>
       ) : (
         <Animated.Text
           style={[

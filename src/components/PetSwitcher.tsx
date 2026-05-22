@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { PetState, Rarity } from '../types';
+import { SPRITES, hasSprite } from '../sprites';
+import { PixelArt } from './PixelArt';
 
 type Props = {
   pets: PetState[];
@@ -52,7 +54,13 @@ export const PetSwitcher: React.FC<Props> = ({
               pressed && styles.tilePressed,
             ]}
           >
-            <Text style={styles.emoji}>{tileEmoji(pet)}</Text>
+            {pet.stage !== 'egg' &&
+            pet.stage !== 'dead' &&
+            hasSprite(pet.species) ? (
+              <PixelArt sprite={SPRITES[pet.species]} size={36} />
+            ) : (
+              <Text style={styles.emoji}>{tileEmoji(pet)}</Text>
+            )}
             <Text
               style={[styles.name, active && styles.nameActive]}
               numberOfLines={1}
