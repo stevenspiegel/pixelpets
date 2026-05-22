@@ -101,7 +101,7 @@ export const GameScreen: React.FC<Props> = ({
 
         {isEgg && (
           <Text style={styles.hint}>
-            Your egg will hatch soon. Keep the app open!
+            Your egg is incubating. Come back in a few minutes!
           </Text>
         )}
 
