@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   Pressable,
   ScrollView,
@@ -24,6 +25,7 @@ type Props = {
   onSwitchPet: (id: string) => void;
   onAddNew: () => void;
   onRemove: () => void;
+  onRename: (id: string, name: string) => void;
   onLogOut: () => void;
 };
 
@@ -59,8 +61,28 @@ export const GameScreen: React.FC<Props> = ({
   onSwitchPet,
   onAddNew,
   onRemove,
+  onRename,
   onLogOut,
 }) => {
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState('');
+
+  // Leave edit mode when switching to a different pet.
+  useEffect(() => {
+    setEditingName(false);
+  }, [pet.id]);
+
+  const startRename = () => {
+    setDraftName(pet.name);
+    setEditingName(true);
+  };
+
+  const saveRename = () => {
+    const clean = draftName.trim();
+    if (clean) onRename(pet.id, clean);
+    setEditingName(false);
+  };
+
   const status = useMemo(() => {
     if (pet.stage === 'dead') return 'has passed away…';
     if (pet.stage === 'egg') return 'is incubating…';
@@ -96,7 +118,36 @@ export const GameScreen: React.FC<Props> = ({
         />
       </View>
       <View style={styles.header}>
-        <Text style={styles.name}>{pet.name.toUpperCase()}</Text>
+        {editingName ? (
+          <View style={styles.nameEditRow}>
+            <TextInput
+              value={draftName}
+              onChangeText={setDraftName}
+              style={styles.nameInput}
+              maxLength={16}
+              autoFocus
+              autoCapitalize="words"
+              autoCorrect={false}
+              onSubmitEditing={saveRename}
+              returnKeyType="done"
+            />
+            <Pressable onPress={saveRename} hitSlop={10}>
+              <Text style={styles.nameSave}>✓</Text>
+            </Pressable>
+            <Pressable onPress={() => setEditingName(false)} hitSlop={10}>
+              <Text style={styles.nameCancel}>✕</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            onPress={isEgg ? undefined : startRename}
+            style={styles.nameRow}
+            disabled={isEgg}
+          >
+            <Text style={styles.name}>{pet.name.toUpperCase()}</Text>
+            {!isEgg && <Text style={styles.pencil}> ✎</Text>}
+          </Pressable>
+        )}
         <Text style={styles.stageText}>
           {stageLabel}
           {!isEgg ? ` · ${speciesName(pet.species).toUpperCase()}` : ''} ·{' '}
@@ -225,6 +276,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   name: {
     color: '#fff',
     fontFamily: 'Courier',
@@ -233,6 +288,41 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
     textShadowColor: '#7a4ed0',
     textShadowOffset: { width: 2, height: 2 },
+  },
+  pencil: {
+    color: '#8a76c0',
+    fontSize: 16,
+  },
+  nameEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  nameInput: {
+    color: '#fff',
+    fontFamily: 'Courier',
+    fontSize: 22,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+    backgroundColor: '#2a1a4a',
+    borderWidth: 2,
+    borderColor: '#7a4ed0',
+    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    minWidth: 160,
+    textAlign: 'center',
+  },
+  nameSave: {
+    color: '#7fee7f',
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+  nameCancel: {
+    color: '#ff8aa3',
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginLeft: 10,
   },
   stageText: {
     color: '#d6c8ff',

@@ -61,7 +61,15 @@ const RARITY_WEIGHTS: Record<Rarity, number> = {
 
 const RARITY_ORDER: readonly Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
 
-const rollSpecies = (): { species: string; rarity: Rarity } => {
+// Naming an egg one of these (case-insensitive) guarantees that species
+// at hatch instead of a random roll. Easter eggs.
+const SPECIAL_NAMES: Record<string, { species: string; rarity: Rarity }> = {
+  spyro: { species: DRAGON_SPECIES, rarity: 'legendary' },
+};
+
+const rollSpecies = (name?: string): { species: string; rarity: Rarity } => {
+  const special = name && SPECIAL_NAMES[name.trim().toLowerCase()];
+  if (special) return special;
   const totalWeight = RARITY_ORDER.reduce((sum, r) => sum + RARITY_WEIGHTS[r], 0);
   let roll = Math.random() * totalWeight;
   for (const rarity of RARITY_ORDER) {
@@ -129,7 +137,7 @@ const scaleElapsed = (rawElapsed: number): number => {
 };
 
 const createPet = (name: string): PetState => {
-  const { species, rarity } = rollSpecies();
+  const { species, rarity } = rollSpecies(name);
   return {
     id: makeId(),
     name: name || 'Pixel',
@@ -387,6 +395,15 @@ export const usePet = (userId: string | null) => {
     });
   }, []);
 
+  const renamePet = useCallback((id: string, name: string) => {
+    const clean = name.trim().slice(0, 16);
+    if (!clean) return;
+    setCol((c) => ({
+      ...c,
+      pets: c.pets.map((p) => (p.id === id ? { ...p, name: clean } : p)),
+    }));
+  }, []);
+
   const activePet = col.pets.find((p) => p.id === col.activeId) ?? null;
 
   return {
@@ -397,6 +414,7 @@ export const usePet = (userId: string | null) => {
     hatch,
     switchPet,
     removePet,
+    renamePet,
     act,
   };
 };
