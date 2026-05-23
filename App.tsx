@@ -29,6 +29,7 @@ export default function App() {
     hatch,
     switchPet,
     removePet,
+    renamePet,
     act,
   } = usePet(username);
 
@@ -78,6 +79,7 @@ export default function App() {
         onSwitchPet={switchPet}
         onAddNew={() => setAddingNew(true)}
         onRemove={handleRemove}
+        onRename={renamePet}
         onLogOut={logOut}
       />
     );
