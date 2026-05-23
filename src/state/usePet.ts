@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { PetState, ActionKind, LifeStage, Rarity } from '../types';
+import { PetState, ActionKind, LifeStage, Rarity, DRAGON_SPECIES } from '../types';
 
 const STORAGE_PREFIX_V1 = '@pixelpets/pet/v1/';   // legacy single-pet save
 const STORAGE_PREFIX_V2 = '@pixelpets/pets/v2/';  // collection of pets
@@ -147,6 +147,7 @@ const createPet = (name: string): PetState => {
     asleep: false,
     poops: 0,
     sick: false,
+    ascended: false,
   };
 };
 
@@ -216,10 +217,17 @@ const applyDecay = (pet: PetState, now: number): PetState => {
   return next;
 };
 
+// A dragon may ascend once it reaches adulthood. One-way, terminal upgrade.
+export const canAscend = (pet: PetState): boolean =>
+  pet.species === DRAGON_SPECIES && pet.stage === 'adult' && !pet.ascended;
+
 const applyAction = (pet: PetState, kind: ActionKind, now: number): PetState => {
   if (pet.stage === 'dead' || pet.stage === 'egg') return pet;
   const base = applyDecay(pet, now);
   switch (kind) {
+    case 'ascend':
+      if (!canAscend(base)) return base;
+      return { ...base, ascended: true };
     case 'feed':
       if (base.asleep) return base;
       return {

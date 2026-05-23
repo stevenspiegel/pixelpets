@@ -14,7 +14,7 @@ import { StatBar } from './StatBar';
 import { ActionButton } from './ActionButton';
 import { RarityBadge } from './RarityBadge';
 import { PetSwitcher } from './PetSwitcher';
-import { MAX_PETS, speciesName } from '../state/usePet';
+import { MAX_PETS, speciesName, canAscend } from '../state/usePet';
 
 type Props = {
   pet: PetState;
@@ -75,6 +75,8 @@ export const GameScreen: React.FC<Props> = ({
 
   const isEgg = pet.stage === 'egg';
   const isDead = pet.stage === 'dead';
+  const ascendable = canAscend(pet);
+  const stageLabel = pet.ascended ? 'ASCENDED' : pet.stage.toUpperCase();
 
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
@@ -96,7 +98,7 @@ export const GameScreen: React.FC<Props> = ({
       <View style={styles.header}>
         <Text style={styles.name}>{pet.name.toUpperCase()}</Text>
         <Text style={styles.stageText}>
-          {pet.stage.toUpperCase()}
+          {stageLabel}
           {!isEgg ? ` · ${speciesName(pet.species).toUpperCase()}` : ''} ·{' '}
           {formatAge(pet.age)}
         </Text>
@@ -127,6 +129,19 @@ export const GameScreen: React.FC<Props> = ({
           </Text>
         )}
       </View>
+
+      {ascendable && (
+        <Pressable
+          onPress={() => onAct('ascend')}
+          style={({ pressed }) => [
+            styles.ascendButton,
+            pressed && styles.ascendButtonPressed,
+          ]}
+        >
+          <Text style={styles.ascendText}>✨ ASCEND ✨</Text>
+          <Text style={styles.ascendSub}>your dragon is ready to transcend</Text>
+        </Pressable>
+      )}
 
       {!isEgg && !isDead && (
         <View style={styles.actions}>
@@ -273,6 +288,35 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'center',
     marginTop: 16,
+  },
+  ascendButton: {
+    width: '100%',
+    maxWidth: 380,
+    marginTop: 16,
+    backgroundColor: '#6a4a0a',
+    borderWidth: 3,
+    borderColor: '#ffd24d',
+    borderRadius: 6,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  ascendButtonPressed: {
+    transform: [{ translateY: 2 }],
+    backgroundColor: '#8a6310',
+  },
+  ascendText: {
+    color: '#ffe9a0',
+    fontFamily: 'Courier',
+    fontSize: 18,
+    fontWeight: 'bold',
+    letterSpacing: 3,
+  },
+  ascendSub: {
+    color: '#d6c8ff',
+    fontFamily: 'Courier',
+    fontSize: 11,
+    marginTop: 3,
+    letterSpacing: 1,
   },
   resetButton: {
     marginTop: 18,
