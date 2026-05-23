@@ -14,7 +14,7 @@ import { StatBar } from './StatBar';
 import { ActionButton } from './ActionButton';
 import { RarityBadge } from './RarityBadge';
 import { PetSwitcher } from './PetSwitcher';
-import { MAX_PETS } from '../state/usePet';
+import { MAX_PETS, speciesName } from '../state/usePet';
 
 type Props = {
   pet: PetState;
@@ -96,7 +96,9 @@ export const GameScreen: React.FC<Props> = ({
       <View style={styles.header}>
         <Text style={styles.name}>{pet.name.toUpperCase()}</Text>
         <Text style={styles.stageText}>
-          {pet.stage.toUpperCase()} · {formatAge(pet.age)}
+          {pet.stage.toUpperCase()}
+          {!isEgg ? ` · ${speciesName(pet.species).toUpperCase()}` : ''} ·{' '}
+          {formatAge(pet.age)}
         </Text>
         {!isEgg && <RarityBadge rarity={pet.rarity} />}
       </View>
