@@ -29,6 +29,28 @@ const LEGACY_RARITY: Record<string, Rarity> = {
   '🐲': 'legendary',
 };
 
+// Human-readable name for each species emoji, used in the UI.
+const SPECIES_NAMES: Record<string, string> = {
+  '🐕': 'Dog',     '🐈': 'Cat',      '🐇': 'Rabbit',  '🐁': 'Mouse',
+  '🐀': 'Rat',     '🐦': 'Bird',     '🐢': 'Turtle',  '🐠': 'Fish',
+  '🦊': 'Fox',     '🦝': 'Raccoon',  '🦨': 'Skunk',   '🐍': 'Snake',
+  '🦎': 'Lizard',  '🦇': 'Bat',      '🦔': 'Hedgehog','🐧': 'Penguin',
+  '🦡': 'Badger',  '🦌': 'Deer',     '🦥': 'Sloth',   '🦉': 'Owl',
+  '🦅': 'Eagle',   '🦘': 'Kangaroo', '🦦': 'Otter',   '🦫': 'Beaver',
+  '🐅': 'Tiger',   '🐘': 'Elephant', '🦏': 'Rhino',   '🐊': 'Crocodile',
+  '🦈': 'Shark',   '🦒': 'Giraffe',  '🦚': 'Peacock', '🦬': 'Bison',
+  '🐉': 'Dragon',  '🦄': 'Unicorn',  '🧜': 'Mermaid', '🦖': 'T-Rex',
+  '🦕': 'Sauropod','🐙': 'Octopus',
+  // legacy species from earlier hatches
+  '🐶': 'Dog',     '🐱': 'Cat',      '🐰': 'Rabbit',  '🐭': 'Mouse',
+  '🐹': 'Hamster', '🐸': 'Frog',     '🐺': 'Wolf',    '🐼': 'Panda',
+  '🐨': 'Koala',   '🦁': 'Lion',     '🐯': 'Tiger',   '🦛': 'Hippo',
+  '🐲': 'Dragon',
+};
+
+export const speciesName = (species: string): string =>
+  SPECIES_NAMES[species] ?? 'Critter';
+
 const RARITY_WEIGHTS: Record<Rarity, number> = {
   common: 60,
   uncommon: 25,
