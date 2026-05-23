@@ -46,7 +46,6 @@ export const LoginScreen: React.FC<Props> = ({ onLogIn, onSignUp }) => {
         style={styles.header}
         resizeMode="contain"
       />
-      <Text style={styles.title}>PIXEL PETS</Text>
       <Text style={styles.subtitle}>
         {mode === 'login' ? 'Welcome back!' : 'Create your trainer account'}
       </Text>
@@ -139,17 +138,6 @@ const styles = StyleSheet.create({
     width: 280,
     height: 60,
     marginBottom: 8,
-  },
-  title: {
-    color: '#fff',
-    fontFamily: 'Courier',
-    fontSize: 30,
-    fontWeight: 'bold',
-    letterSpacing: 4,
-    marginBottom: 4,
-    textShadowColor: '#7a4ed0',
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 0,
   },
   subtitle: {
     color: '#d6c8ff',
