@@ -19,6 +19,12 @@ export const IMAGE_SPRITES: Record<string, StageImages> = {
     teen: require('../../assets/sprites/beaver-teen.png'),
     adult: require('../../assets/sprites/beaver-adult.png'),
   },
+  '🦔': {
+    baby: require('../../assets/sprites/hedgehog-baby.png'),
+    child: require('../../assets/sprites/hedgehog-child.png'),
+    teen: require('../../assets/sprites/hedgehog-teen.png'),
+    adult: require('../../assets/sprites/hedgehog-adult.png'),
+  },
 };
 
 export const imageSpriteFor = (
