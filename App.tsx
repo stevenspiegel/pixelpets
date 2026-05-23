@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  ImageBackground,
   SafeAreaView,
   StyleSheet,
   View,
@@ -14,6 +13,12 @@ import { usePet } from './src/state/usePet';
 import { LoginScreen } from './src/components/LoginScreen';
 import { HatchScreen } from './src/components/HatchScreen';
 import { GameScreen } from './src/components/GameScreen';
+
+const SKY = '#1565ad';
+const GRASS = '#12b35a';
+const TOOTH = 18;
+// Enough teeth to span an ultrawide viewport; the row is clipped to width.
+const TEETH_COUNT = 200;
 
 export default function App() {
   const { username, loaded: authLoaded, signUp, logIn, logOut } = useAuth();
@@ -85,23 +90,57 @@ export default function App() {
   }
 
   return (
-    <ImageBackground
-      source={require('./assets/background-tall.png')}
-      style={styles.bg}
-      resizeMode="cover"
-    >
+    <View style={styles.root}>
+      <View style={styles.grass} pointerEvents="none">
+        <View style={styles.teeth}>
+          {Array.from({ length: TEETH_COUNT }).map((_, i) => (
+            <View
+              key={i}
+              style={[styles.tooth, i % 2 === 0 ? styles.toothUp : styles.toothGap]}
+            />
+          ))}
+        </View>
+        <View style={styles.grassBody} />
+      </View>
       <View style={styles.overlay}>
         <SafeAreaView style={styles.safe}>{screen}</SafeAreaView>
         <StatusBar style="light" />
       </View>
-    </ImageBackground>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  bg: {
+  root: {
     flex: 1,
-    backgroundColor: '#1a0d2e',
+    backgroundColor: SKY,
+    overflow: 'hidden',
+  },
+  grass: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 150,
+  },
+  teeth: {
+    flexDirection: 'row',
+    height: TOOTH,
+    overflow: 'hidden',
+  },
+  tooth: {
+    width: TOOTH,
+    height: TOOTH,
+  },
+  toothUp: {
+    backgroundColor: GRASS,
+  },
+  toothGap: {
+    backgroundColor: 'transparent',
+  },
+  grassBody: {
+    flex: 1,
+    backgroundColor: GRASS,
   },
   overlay: {
     flex: 1,
