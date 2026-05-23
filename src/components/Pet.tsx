@@ -3,6 +3,7 @@ import { View, Text, Image, StyleSheet, Animated, Easing } from 'react-native';
 import { PetState } from '../types';
 import { STAGE_BABY_AT } from '../state/usePet';
 import { SPRITES, hasSprite } from '../sprites';
+import { imageSpriteFor } from '../sprites/images';
 import { PixelArt } from './PixelArt';
 
 type Props = {
@@ -101,6 +102,11 @@ export const Pet: React.FC<Props> = ({ pet }) => {
   });
 
   const mood = moodEmoji(pet);
+  const spriteSize = SPRITE_SIZE_BY_STAGE[pet.stage] ?? 160;
+  const imageSource =
+    pet.stage !== 'egg' && pet.stage !== 'dead'
+      ? imageSpriteFor(pet.species, pet.stage)
+      : undefined;
 
   return (
     <View style={styles.wrap}>
@@ -156,12 +162,17 @@ export const Pet: React.FC<Props> = ({ pet }) => {
             </Text>
           </View>
         </View>
+      ) : imageSource ? (
+        <Animated.View style={{ transform: [{ translateY }] }}>
+          <Image
+            source={imageSource}
+            style={{ width: spriteSize, height: spriteSize }}
+            resizeMode="contain"
+          />
+        </Animated.View>
       ) : hasSprite(pet.species) && pet.stage !== 'dead' ? (
         <Animated.View style={{ transform: [{ translateY }] }}>
-          <PixelArt
-            sprite={SPRITES[pet.species]}
-            size={SPRITE_SIZE_BY_STAGE[pet.stage] ?? 160}
-          />
+          <PixelArt sprite={SPRITES[pet.species]} size={spriteSize} />
         </Animated.View>
       ) : (
         <Animated.Text

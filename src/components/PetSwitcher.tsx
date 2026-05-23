@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Image } from 'react-native';
 import { PetState, Rarity } from '../types';
 import { SPRITES, hasSprite } from '../sprites';
+import { imageSpriteFor } from '../sprites/images';
 import { PixelArt } from './PixelArt';
 
 type Props = {
@@ -56,7 +57,15 @@ export const PetSwitcher: React.FC<Props> = ({
           >
             {pet.stage !== 'egg' &&
             pet.stage !== 'dead' &&
-            hasSprite(pet.species) ? (
+            imageSpriteFor(pet.species, pet.stage) ? (
+              <Image
+                source={imageSpriteFor(pet.species, pet.stage)!}
+                style={styles.tileImage}
+                resizeMode="contain"
+              />
+            ) : pet.stage !== 'egg' &&
+              pet.stage !== 'dead' &&
+              hasSprite(pet.species) ? (
               <PixelArt sprite={SPRITES[pet.species]} size={36} />
             ) : (
               <Text style={styles.emoji}>{tileEmoji(pet)}</Text>
@@ -118,6 +127,10 @@ const styles = StyleSheet.create({
   emoji: {
     fontSize: 28,
     lineHeight: 36,
+  },
+  tileImage: {
+    width: 36,
+    height: 36,
   },
   name: {
     color: '#d6c8ff',
