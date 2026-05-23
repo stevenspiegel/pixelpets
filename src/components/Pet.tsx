@@ -105,7 +105,7 @@ export const Pet: React.FC<Props> = ({ pet }) => {
   const spriteSize = SPRITE_SIZE_BY_STAGE[pet.stage] ?? 160;
   const imageSource =
     pet.stage !== 'egg' && pet.stage !== 'dead'
-      ? imageSpriteFor(pet.species, pet.stage)
+      ? imageSpriteFor(pet.species, pet.stage, pet.ascended)
       : undefined;
 
   return (

@@ -57,9 +57,9 @@ export const PetSwitcher: React.FC<Props> = ({
           >
             {pet.stage !== 'egg' &&
             pet.stage !== 'dead' &&
-            imageSpriteFor(pet.species, pet.stage) ? (
+            imageSpriteFor(pet.species, pet.stage, pet.ascended) ? (
               <Image
-                source={imageSpriteFor(pet.species, pet.stage)!}
+                source={imageSpriteFor(pet.species, pet.stage, pet.ascended)!}
                 style={styles.tileImage}
                 resizeMode="contain"
               />

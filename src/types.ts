@@ -19,6 +19,17 @@ export type PetState = {
   asleep: boolean;
   poops: number;
   sick: boolean;
+  // Dragons can ascend once they reach the adult stage. Terminal, one-way.
+  ascended?: boolean;
 };
 
-export type ActionKind = 'feed' | 'play' | 'clean' | 'sleep' | 'wake' | 'medicine';
+export type ActionKind =
+  | 'feed'
+  | 'play'
+  | 'clean'
+  | 'sleep'
+  | 'wake'
+  | 'medicine'
+  | 'ascend';
+
+export const DRAGON_SPECIES = '🐉';

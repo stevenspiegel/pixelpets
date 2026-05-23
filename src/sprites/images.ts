@@ -3,10 +3,19 @@ import { LifeStage } from '../types';
 
 // Image-based sprites take priority over the pixel-art grid in ./index.ts.
 // Each species maps life stages to bundled PNGs; a stage may be omitted, in
-// which case rendering falls back to the grid sprite (or emoji).
-type StageImages = Partial<Record<LifeStage, ImageSourcePropType>>;
+// which case rendering falls back to the grid sprite (or emoji). The special
+// 'ascended' key is the dragon's post-adult ascended form.
+type SpriteKey = LifeStage | 'ascended';
+type StageImages = Partial<Record<SpriteKey, ImageSourcePropType>>;
 
 export const IMAGE_SPRITES: Record<string, StageImages> = {
+  '🐉': {
+    baby: require('../../assets/sprites/dragon-baby.png'),
+    child: require('../../assets/sprites/dragon-child.png'),
+    teen: require('../../assets/sprites/dragon-teen.png'),
+    adult: require('../../assets/sprites/dragon-adult.png'),
+    ascended: require('../../assets/sprites/dragon-ascended.png'),
+  },
   '🦈': {
     baby: require('../../assets/sprites/shark-baby.png'),
     child: require('../../assets/sprites/shark-child.png'),
@@ -41,5 +50,11 @@ export const IMAGE_SPRITES: Record<string, StageImages> = {
 
 export const imageSpriteFor = (
   species: string,
-  stage: LifeStage
-): ImageSourcePropType | undefined => IMAGE_SPRITES[species]?.[stage];
+  stage: LifeStage,
+  ascended = false
+): ImageSourcePropType | undefined => {
+  const entry = IMAGE_SPRITES[species];
+  if (!entry) return undefined;
+  if (ascended && entry.ascended) return entry.ascended;
+  return entry[stage];
+};
