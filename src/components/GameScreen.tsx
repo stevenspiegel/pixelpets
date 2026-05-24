@@ -9,7 +9,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { PetState, ActionKind } from '../types';
+import { PetState, ActionKind, StatKey } from '../types';
 import { Pet } from './Pet';
 import { StatBar } from './StatBar';
 import { ActionButton } from './ActionButton';
@@ -22,11 +22,13 @@ type Props = {
   pet: PetState;
   pets: PetState[];
   username: string;
+  tokens: number;
   onAct: (kind: ActionKind) => void;
   onSwitchPet: (id: string) => void;
   onAddNew: () => void;
   onRemove: () => void;
   onRename: (id: string, name: string) => void;
+  onTrain: (stat: StatKey) => void;
   onLogOut: () => void;
 };
 
@@ -58,11 +60,13 @@ export const GameScreen: React.FC<Props> = ({
   pet,
   pets,
   username,
+  tokens,
   onAct,
   onSwitchPet,
   onAddNew,
   onRemove,
   onRename,
+  onTrain,
   onLogOut,
 }) => {
   const [editingName, setEditingName] = useState(false);
@@ -105,6 +109,9 @@ export const GameScreen: React.FC<Props> = ({
     <ScrollView contentContainerStyle={styles.scroll}>
       <View style={styles.topBar}>
         <Text style={styles.trainer}>@{username}</Text>
+        <View style={styles.walletChip}>
+          <Text style={styles.walletText}>✦ {tokens}</Text>
+        </View>
         <Pressable onPress={onLogOut} hitSlop={8}>
           <Text style={styles.logout}>LOG OUT</Text>
         </Pressable>
@@ -172,7 +179,7 @@ export const GameScreen: React.FC<Props> = ({
             <StatBar label="CLEAN" icon="🧼" color="#5fc0ff" value={pet.cleanliness} />
             <StatBar label="ENERGY" icon="⚡" color="#ffe34d" value={pet.energy} />
             <StatBar label="HEALTH" icon="💊" color="#7fee7f" value={pet.health} />
-            <BattleStats pet={pet} />
+            <BattleStats pet={pet} tokens={tokens} onTrain={onTrain} />
           </View>
         )}
 
@@ -260,6 +267,21 @@ const styles = StyleSheet.create({
     color: '#d6c8ff',
     fontFamily: 'Courier',
     fontSize: 12,
+    letterSpacing: 1,
+  },
+  walletChip: {
+    backgroundColor: '#3a2070',
+    borderWidth: 2,
+    borderColor: '#ffd24d',
+    borderRadius: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 2,
+  },
+  walletText: {
+    color: '#ffe9a0',
+    fontFamily: 'Courier',
+    fontSize: 13,
+    fontWeight: 'bold',
     letterSpacing: 1,
   },
   logout: {

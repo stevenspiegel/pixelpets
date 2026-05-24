@@ -25,11 +25,13 @@ export default function App() {
   const {
     pets,
     activePet,
+    tokens,
     loaded: petLoaded,
     hatch,
     switchPet,
     removePet,
     renamePet,
+    trainStat,
     act,
   } = usePet(username);
 
@@ -75,11 +77,13 @@ export default function App() {
         pet={activePet}
         pets={pets}
         username={username}
+        tokens={tokens}
         onAct={act}
         onSwitchPet={switchPet}
         onAddNew={() => setAddingNew(true)}
         onRemove={handleRemove}
         onRename={renamePet}
+        onTrain={(stat) => trainStat(activePet.id, stat)}
         onLogOut={logOut}
       />
     );
