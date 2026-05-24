@@ -1,20 +1,22 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { PetState } from '../types';
-import { battleStats } from '../state/usePet';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { PetState, StatKey } from '../types';
+import { battleStats, trainCost, STAT_INCREMENT } from '../state/usePet';
 
 type Props = {
   pet: PetState;
+  tokens: number;
+  onTrain: (stat: StatKey) => void;
 };
 
-const CHIPS: { key: 'attack' | 'defense' | 'speed' | 'maxHp'; icon: string; label: string }[] = [
+const CHIPS: { key: StatKey; icon: string; label: string }[] = [
   { key: 'attack', icon: '⚔️', label: 'ATK' },
   { key: 'defense', icon: '🛡️', label: 'DEF' },
   { key: 'speed', icon: '👟', label: 'SPD' },
   { key: 'maxHp', icon: '❤️', label: 'HP' },
 ];
 
-export const BattleStats: React.FC<Props> = ({ pet }) => {
+export const BattleStats: React.FC<Props> = ({ pet, tokens, onTrain }) => {
   const stats = battleStats(pet);
   return (
     <View style={styles.wrap}>
@@ -25,14 +27,35 @@ export const BattleStats: React.FC<Props> = ({ pet }) => {
         </View>
       </View>
       <View style={styles.chipRow}>
-        {CHIPS.map((c) => (
-          <View key={c.key} style={styles.chip}>
-            <Text style={styles.chipIcon}>{c.icon}</Text>
-            <Text style={styles.chipLabel}>{c.label}</Text>
-            <Text style={styles.chipValue}>{stats[c.key]}</Text>
-          </View>
-        ))}
+        {CHIPS.map((c) => {
+          const cost = trainCost(c.key, pet.stats[c.key]);
+          const affordable = tokens >= cost;
+          return (
+            <View key={c.key} style={styles.chip}>
+              <Text style={styles.chipIcon}>{c.icon}</Text>
+              <Text style={styles.chipLabel}>{c.label}</Text>
+              <Text style={styles.chipValue}>{stats[c.key]}</Text>
+              <Pressable
+                onPress={() => onTrain(c.key)}
+                disabled={!affordable}
+                style={({ pressed }) => [
+                  styles.trainBtn,
+                  !affordable && styles.trainBtnDisabled,
+                  pressed && affordable && styles.trainBtnPressed,
+                ]}
+              >
+                <Text style={[styles.trainInc, !affordable && styles.trainTextDim]}>
+                  +{STAT_INCREMENT[c.key]}
+                </Text>
+                <Text style={[styles.trainCost, !affordable && styles.trainTextDim]}>
+                  ✦{cost}
+                </Text>
+              </Pressable>
+            </View>
+          );
+        })}
       </View>
+      <Text style={styles.hint}>spend ✦ Pixel tokens to train · earn by playing</Text>
     </View>
   );
 };
@@ -81,6 +104,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     alignItems: 'center',
     paddingVertical: 6,
+    paddingHorizontal: 2,
   },
   chipIcon: {
     fontSize: 16,
@@ -97,5 +121,45 @@ const styles = StyleSheet.create({
     fontFamily: 'Courier',
     fontSize: 16,
     fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  trainBtn: {
+    backgroundColor: '#3a2070',
+    borderWidth: 1,
+    borderColor: '#7a4ed0',
+    borderRadius: 3,
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    alignSelf: 'stretch',
+  },
+  trainBtnDisabled: {
+    opacity: 0.4,
+  },
+  trainBtnPressed: {
+    backgroundColor: '#5a30a0',
+  },
+  trainInc: {
+    color: '#7fee7f',
+    fontFamily: 'Courier',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  trainCost: {
+    color: '#ffd24d',
+    fontFamily: 'Courier',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  trainTextDim: {
+    color: '#8a76c0',
+  },
+  hint: {
+    color: '#8a76c0',
+    fontFamily: 'Courier',
+    fontSize: 9,
+    textAlign: 'center',
+    marginTop: 6,
+    letterSpacing: 1,
   },
 });

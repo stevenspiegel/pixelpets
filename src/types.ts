@@ -11,6 +11,8 @@ export type BattleStats = {
   maxHp: number;
 };
 
+export type StatKey = keyof BattleStats;
+
 export type PetState = {
   id: string;
   name: string;

@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { PetState, ActionKind, LifeStage, Rarity, BattleStats, DRAGON_SPECIES } from '../types';
+import {
+  PetState,
+  ActionKind,
+  LifeStage,
+  Rarity,
+  BattleStats,
+  StatKey,
+  DRAGON_SPECIES,
+} from '../types';
 
 const STORAGE_PREFIX_V1 = '@pixelpets/pet/v1/';   // legacy single-pet save
 const STORAGE_PREFIX_V2 = '@pixelpets/pets/v2/';  // collection of pets
@@ -342,12 +350,57 @@ const applyAction = (pet: PetState, kind: ActionKind, now: number): PetState => 
   }
 };
 
+// === Pixel tokens (account-level currency) ==========================
+export type Wallet = {
+  tokens: number;
+  earnDate: string; // YYYY-MM-DD of the current earning day
+  earnedToday: number;
+};
+
+// Tokens earned per successful PLAY, and the daily earning cap.
+export const PLAY_REWARD = 3;
+export const DAILY_EARN_CAP = 60;
+const STARTING_TOKENS = 25; // small welcome balance so training is tryable
+
+// How much one training step raises each base stat.
+export const STAT_INCREMENT: Record<StatKey, number> = {
+  attack: 1,
+  defense: 1,
+  speed: 1,
+  maxHp: 4,
+};
+
+// Token cost to train a stat once, rising with the current base value.
+export const trainCost = (stat: StatKey, baseValue: number): number =>
+  stat === 'maxHp'
+    ? 5 + Math.floor(baseValue / 8)
+    : 5 + Math.floor(baseValue / 2);
+
+const todayStr = (): string => new Date().toISOString().slice(0, 10);
+
+const emptyWallet = (): Wallet => ({
+  tokens: STARTING_TOKENS,
+  earnDate: todayStr(),
+  earnedToday: 0,
+});
+
+// Add tokens, honoring the daily cap (resets when the date rolls over).
+const awardTokens = (w: Wallet, amount: number): Wallet => {
+  const today = todayStr();
+  const day = w.earnDate === today ? w : { ...w, earnDate: today, earnedToday: 0 };
+  const room = Math.max(0, DAILY_EARN_CAP - day.earnedToday);
+  const gain = Math.min(amount, room);
+  if (gain <= 0) return day === w ? w : day;
+  return { ...day, tokens: day.tokens + gain, earnedToday: day.earnedToday + gain };
+};
+
 type Collection = {
   pets: PetState[];
   activeId: string | null;
+  wallet: Wallet;
 };
 
-const EMPTY: Collection = { pets: [], activeId: null };
+const EMPTY: Collection = { pets: [], activeId: null, wallet: emptyWallet() };
 
 const tickAll = (col: Collection, now: number): Collection => {
   if (col.pets.length === 0) return col;
@@ -364,18 +417,22 @@ const loadCollection = async (userId: string): Promise<Collection> => {
   try {
     const v2 = await AsyncStorage.getItem(v2Key(userId));
     if (v2) {
-      const parsed = JSON.parse(v2) as Collection;
-      const migrated = parsed.pets.map(migratePet);
+      const parsed = JSON.parse(v2) as Partial<Collection>;
+      const migrated = (parsed.pets ?? []).map(migratePet);
       const validActive = migrated.find((p) => p.id === parsed.activeId)?.id
         ?? migrated[0]?.id
         ?? null;
-      return { pets: migrated, activeId: validActive };
+      return {
+        pets: migrated,
+        activeId: validActive,
+        wallet: parsed.wallet ?? emptyWallet(),
+      };
     }
     // Legacy migration: a single-pet v1 save becomes a one-element collection.
     const v1 = await AsyncStorage.getItem(v1Key(userId));
     if (v1) {
       const pet = migratePet(JSON.parse(v1) as PetState);
-      return { pets: [pet], activeId: pet.id };
+      return { pets: [pet], activeId: pet.id, wallet: emptyWallet() };
     }
   } catch {
     // fall through
@@ -408,6 +465,7 @@ export const usePet = (userId: string | null) => {
       setCol({
         pets: loaded.pets.map((p) => applyDecay(p, Date.now())),
         activeId: loaded.activeId,
+        wallet: loaded.wallet,
       });
       setLoaded(true);
     })();
@@ -435,7 +493,7 @@ export const usePet = (userId: string | null) => {
     setCol((c) => {
       if (c.pets.length >= MAX_PETS) return c;
       const pet = createPet(name);
-      return { pets: [...c.pets, pet], activeId: pet.id };
+      return { ...c, pets: [...c.pets, pet], activeId: pet.id };
     });
   }, []);
 
@@ -448,7 +506,7 @@ export const usePet = (userId: string | null) => {
       const remaining = c.pets.filter((p) => p.id !== id);
       const activeId =
         c.activeId === id ? remaining[0]?.id ?? null : c.activeId;
-      return { pets: remaining, activeId };
+      return { ...c, pets: remaining, activeId };
     });
   }, []);
 
@@ -456,10 +514,34 @@ export const usePet = (userId: string | null) => {
     setCol((c) => {
       if (!c.activeId) return c;
       const now = Date.now();
+      const active = c.pets.find((p) => p.id === c.activeId);
       const pets = c.pets.map((p) =>
         p.id === c.activeId ? applyAction(p, kind, now) : p
       );
-      return { ...c, pets };
+      // A successful PLAY earns Pixel tokens (up to the daily cap).
+      let wallet = c.wallet;
+      if (kind === 'play' && active) {
+        const d = applyDecay(active, now);
+        const played =
+          d.stage !== 'egg' && d.stage !== 'dead' && !d.asleep && d.energy >= 10;
+        if (played) wallet = awardTokens(c.wallet, PLAY_REWARD);
+      }
+      return { ...c, pets, wallet };
+    });
+  }, []);
+
+  const trainStat = useCallback((petId: string, stat: StatKey) => {
+    setCol((c) => {
+      const pet = c.pets.find((p) => p.id === petId);
+      if (!pet) return c;
+      const cost = trainCost(stat, pet.stats[stat]);
+      if (c.wallet.tokens < cost) return c;
+      const pets = c.pets.map((p) =>
+        p.id === petId
+          ? { ...p, stats: { ...p.stats, [stat]: p.stats[stat] + STAT_INCREMENT[stat] } }
+          : p
+      );
+      return { ...c, pets, wallet: { ...c.wallet, tokens: c.wallet.tokens - cost } };
     });
   }, []);
 
@@ -478,11 +560,13 @@ export const usePet = (userId: string | null) => {
     pets: col.pets,
     activePet,
     activeId: col.activeId,
+    tokens: col.wallet.tokens,
     loaded,
     hatch,
     switchPet,
     removePet,
     renamePet,
+    trainStat,
     act,
   };
 };
