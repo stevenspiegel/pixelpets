@@ -153,6 +153,23 @@ const ageLevel = (age: number): number =>
 export const petLevel = (pet: PetState): number =>
   Math.min(MAX_LEVEL, Math.max(1, pet.level ?? 1));
 
+// Max level a pet can train to at each life stage — grow up to train further.
+const STAGE_LEVEL_CAP: Record<LifeStage, number> = {
+  egg: 0,
+  baby: 10,
+  child: 20,
+  teen: 35,
+  adult: MAX_LEVEL,
+  dead: 0,
+};
+
+export const stageLevelCap = (stage: LifeStage): number => STAGE_LEVEL_CAP[stage];
+
+export const canTrain = (pet: PetState): boolean =>
+  pet.stage !== 'egg' &&
+  pet.stage !== 'dead' &&
+  (pet.level ?? 1) < STAGE_LEVEL_CAP[pet.stage];
+
 // Effective combat stats: base × level growth × ascension bonus, plus level.
 export const battleStats = (
   pet: PetState
@@ -545,14 +562,16 @@ export const usePet = (userId: string | null) => {
     setCol((c) => {
       const pet = c.pets.find((p) => p.id === petId);
       if (!pet) return c;
+      if (!canTrain(pet)) return c; // at this life stage's level cap
       const cost = trainCost(stat, pet.stats[stat]);
       if (c.wallet.tokens < cost) return c;
+      const cap = STAGE_LEVEL_CAP[pet.stage];
       const pets = c.pets.map((p) =>
         p.id === petId
           ? {
               ...p,
               stats: { ...p.stats, [stat]: p.stats[stat] + STAT_INCREMENT[stat] },
-              level: Math.min(MAX_LEVEL, (p.level ?? 1) + 1),
+              level: Math.min(cap, (p.level ?? 1) + 1),
             }
           : p
       );
