@@ -29,6 +29,7 @@ type Props = {
   onRemove: () => void;
   onRename: (id: string, name: string) => void;
   onTrain: (stat: StatKey) => void;
+  onBattle: () => void;
   onLogOut: () => void;
 };
 
@@ -67,6 +68,7 @@ export const GameScreen: React.FC<Props> = ({
   onRemove,
   onRename,
   onTrain,
+  onBattle,
   onLogOut,
 }) => {
   const [editingName, setEditingName] = useState(false);
@@ -234,6 +236,19 @@ export const GameScreen: React.FC<Props> = ({
             disabled={!pet.sick}
           />
         </View>
+      )}
+
+      {!isEgg && !isDead && (
+        <Pressable
+          onPress={onBattle}
+          style={({ pressed }) => [
+            styles.battleButton,
+            pressed && styles.battleButtonPressed,
+          ]}
+        >
+          <Text style={styles.battleText}>⚔️ BATTLE</Text>
+          <Text style={styles.battleSub}>fight a wild challenger for ✦ tokens</Text>
+        </Pressable>
       )}
 
       <Pressable
@@ -427,6 +442,35 @@ const styles = StyleSheet.create({
   },
   ascendSub: {
     color: '#d6c8ff',
+    fontFamily: 'Courier',
+    fontSize: 11,
+    marginTop: 3,
+    letterSpacing: 1,
+  },
+  battleButton: {
+    width: '100%',
+    maxWidth: 380,
+    marginTop: 16,
+    backgroundColor: '#7a1f3a',
+    borderWidth: 3,
+    borderColor: '#ff5470',
+    borderRadius: 6,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  battleButtonPressed: {
+    transform: [{ translateY: 2 }],
+    backgroundColor: '#9a2a4a',
+  },
+  battleText: {
+    color: '#fff',
+    fontFamily: 'Courier',
+    fontSize: 18,
+    fontWeight: 'bold',
+    letterSpacing: 3,
+  },
+  battleSub: {
+    color: '#ffd0db',
     fontFamily: 'Courier',
     fontSize: 11,
     marginTop: 3,

@@ -545,6 +545,15 @@ export const usePet = (userId: string | null) => {
     });
   }, []);
 
+  // Add tokens outside the daily play cap (e.g. battle rewards).
+  const grantTokens = useCallback((amount: number) => {
+    if (amount <= 0) return;
+    setCol((c) => ({
+      ...c,
+      wallet: { ...c.wallet, tokens: c.wallet.tokens + amount },
+    }));
+  }, []);
+
   const renamePet = useCallback((id: string, name: string) => {
     const clean = name.trim().slice(0, 16);
     if (!clean) return;
@@ -567,6 +576,7 @@ export const usePet = (userId: string | null) => {
     removePet,
     renamePet,
     trainStat,
+    grantTokens,
     act,
   };
 };
