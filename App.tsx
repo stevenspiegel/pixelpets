@@ -13,6 +13,7 @@ import { usePet } from './src/state/usePet';
 import { LoginScreen } from './src/components/LoginScreen';
 import { HatchScreen } from './src/components/HatchScreen';
 import { GameScreen } from './src/components/GameScreen';
+import { BattleScreen } from './src/components/BattleScreen';
 
 const SKY = '#1565ad';
 const GRASS = '#12b35a';
@@ -32,14 +33,17 @@ export default function App() {
     removePet,
     renamePet,
     trainStat,
+    grantTokens,
     act,
   } = usePet(username);
 
   const [addingNew, setAddingNew] = useState(false);
+  const [battling, setBattling] = useState(false);
 
-  // Whenever the user changes (login/logout), reset the "add new" overlay.
+  // Whenever the user changes (login/logout), reset transient overlays.
   useEffect(() => {
     setAddingNew(false);
+    setBattling(false);
   }, [username]);
 
   const ready = authLoaded && (!username || petLoaded);
@@ -71,6 +75,14 @@ export default function App() {
         onCancel={pets.length > 0 ? () => setAddingNew(false) : undefined}
       />
     );
+  } else if (activePet && battling) {
+    screen = (
+      <BattleScreen
+        pet={activePet}
+        onReward={grantTokens}
+        onExit={() => setBattling(false)}
+      />
+    );
   } else if (activePet) {
     screen = (
       <GameScreen
@@ -84,6 +96,7 @@ export default function App() {
         onRemove={handleRemove}
         onRename={renamePet}
         onTrain={(stat) => trainStat(activePet.id, stat)}
+        onBattle={() => setBattling(true)}
         onLogOut={logOut}
       />
     );
