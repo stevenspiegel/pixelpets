@@ -21,7 +21,7 @@ export const MAX_PETS = 8;
 // excluded so every newly hatched pet shows as a recognizable creature
 // rather than a floating head.
 const SPECIES_BY_RARITY: Record<Rarity, readonly string[]> = {
-  common:    ['🐕', '🐈', '🐇', '🐁', '🐀', '🐦', '🐢', '🐠'],
+  common:    ['🐕', '🐈', '🐇', '🐀', '🐦', '🐢', '🐠'],
   uncommon:  ['🦊', '🦝', '🦨', '🐍', '🦎', '🦇', '🦔', '🐧'],
   rare:      ['🦡', '🦌', '🦥', '🦉', '🦅', '🦘', '🦦', '🦫'],
   epic:      ['🐅', '🐘', '🦏', '🐊', '🦈', '🦒', '🦚', '🦬'],
@@ -30,7 +30,7 @@ const SPECIES_BY_RARITY: Record<Rarity, readonly string[]> = {
 
 const LEGACY_RARITY: Record<string, Rarity> = {
   '🐶': 'common',  '🐱': 'common',  '🐰': 'common',
-  '🐭': 'common',  '🐹': 'common',
+  '🐭': 'common',  '🐹': 'common',  '🐁': 'common', // 🐁 retired from the pool
   '🐸': 'uncommon',
   '🐺': 'rare',    '🐼': 'rare',    '🐨': 'rare',
   '🦁': 'epic',    '🐯': 'epic',    '🦛': 'epic',
