@@ -23,9 +23,9 @@ export const MAX_PETS = 8;
 const SPECIES_BY_RARITY: Record<Rarity, readonly string[]> = {
   common:    ['🐕', '🐈', '🐇', '🐦', '🐢', '🐠'],
   uncommon:  ['🦊', '🐍', '🦎', '🦇', '🦔', '🐧'],
-  rare:      ['🦌', '🦥', '🦉', '🦅', '🦘', '🦫'],
-  epic:      ['🐅', '🐘', '🦏', '🐊', '🦈', '🦒'],
-  legendary: ['🐉', '🦄', '🧜', '🦖', '🦕', '🐙'],
+  rare:      ['🦌', '🦥', '🦉', '🦅', '🦘', '🦫', '🦒'],
+  epic:      ['🐅', '🐘', '🦏', '🐊', '🦈', '🐙'],
+  legendary: ['🐉', '🦄', '🧜', '🦖'],
 };
 
 // Species no longer in the hatch pool, kept so existing pets still classify
@@ -36,7 +36,7 @@ const LEGACY_RARITY: Record<string, Rarity> = {
   '🐸': 'uncommon', '🦝': 'uncommon', '🦨': 'uncommon',
   '🐺': 'rare',    '🐼': 'rare',    '🐨': 'rare',  '🦡': 'rare',  '🦦': 'rare',
   '🦁': 'epic',    '🐯': 'epic',    '🦛': 'epic',  '🦚': 'epic',  '🦬': 'epic',
-  '🐲': 'legendary',
+  '🐲': 'legendary', '🦕': 'legendary', // 🦕 sauropod retired from the pool
 };
 
 // Human-readable name for each species emoji, used in the UI.
