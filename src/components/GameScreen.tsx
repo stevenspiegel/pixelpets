@@ -15,6 +15,7 @@ import { StatBar } from './StatBar';
 import { ActionButton } from './ActionButton';
 import { RarityBadge } from './RarityBadge';
 import { PetSwitcher } from './PetSwitcher';
+import { BattleStats } from './BattleStats';
 import { MAX_PETS, speciesName, canAscend } from '../state/usePet';
 
 type Props = {
@@ -171,6 +172,7 @@ export const GameScreen: React.FC<Props> = ({
             <StatBar label="CLEAN" icon="🧼" color="#5fc0ff" value={pet.cleanliness} />
             <StatBar label="ENERGY" icon="⚡" color="#ffe34d" value={pet.energy} />
             <StatBar label="HEALTH" icon="💊" color="#7fee7f" value={pet.health} />
+            <BattleStats pet={pet} />
           </View>
         )}
 

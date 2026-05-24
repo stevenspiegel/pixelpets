@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { PetState, ActionKind, LifeStage, Rarity, DRAGON_SPECIES } from '../types';
+import { PetState, ActionKind, LifeStage, Rarity, BattleStats, DRAGON_SPECIES } from '../types';
 
 const STORAGE_PREFIX_V1 = '@pixelpets/pet/v1/';   // legacy single-pet save
 const STORAGE_PREFIX_V2 = '@pixelpets/pets/v2/';  // collection of pets
@@ -90,13 +90,79 @@ const rarityForSpecies = (species: string): Rarity => {
   return LEGACY_RARITY[species] ?? 'common';
 };
 
+// === Battle stats ===================================================
+// Rarer pets are innately stronger.
+const RARITY_POWER: Record<Rarity, number> = {
+  common: 1,
+  uncommon: 1.2,
+  rare: 1.45,
+  epic: 1.75,
+  legendary: 2.2,
+};
+
+const MAX_LEVEL = 50;
+const SECONDS_PER_LEVEL = 900; // +1 level every ~15 min of age
+const ASCENDED_STAT_MULT = 1.5;
+
+// Deterministic 0..1 generator seeded by a string, so a pet's rolled base
+// stats are stable for its id regardless of when they're computed.
+const seededRandom = (seed: string): (() => number) => {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return () => {
+    h += 0x6d2b79f5;
+    let t = h;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+const rollStats = (id: string, rarity: Rarity): BattleStats => {
+  const rnd = seededRandom(id);
+  const mult = RARITY_POWER[rarity];
+  const stat = (base: number, spread: number) =>
+    Math.round((base + rnd() * spread) * mult);
+  return {
+    attack: stat(10, 8),
+    defense: stat(10, 8),
+    speed: stat(10, 8),
+    maxHp: stat(40, 30),
+  };
+};
+
+// Level grows with age and is capped. A pure function of the pet's age.
+export const petLevel = (pet: PetState): number =>
+  Math.min(MAX_LEVEL, 1 + Math.floor(Math.max(0, pet.age) / SECONDS_PER_LEVEL));
+
+// Effective combat stats: base × level growth × ascension bonus, plus level.
+export const battleStats = (
+  pet: PetState
+): BattleStats & { level: number } => {
+  const level = petLevel(pet);
+  const growth = 1 + (level - 1) * 0.05; // +5% per level
+  const asc = pet.ascended ? ASCENDED_STAT_MULT : 1;
+  const scale = (n: number) => Math.round(n * growth * asc);
+  return {
+    level,
+    attack: scale(pet.stats.attack),
+    defense: scale(pet.stats.defense),
+    speed: scale(pet.stats.speed),
+    maxHp: scale(pet.stats.maxHp),
+  };
+};
+
 const makeId = () =>
   `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
 const migratePet = (pet: PetState): PetState => {
   let next = pet;
-  if (!next.rarity) next = { ...next, rarity: rarityForSpecies(next.species) };
   if (!next.id) next = { ...next, id: makeId() };
+  if (!next.rarity) next = { ...next, rarity: rarityForSpecies(next.species) };
+  if (!next.stats) next = { ...next, stats: rollStats(next.id, next.rarity) };
   return next;
 };
 
@@ -138,11 +204,13 @@ const scaleElapsed = (rawElapsed: number): number => {
 
 const createPet = (name: string): PetState => {
   const { species, rarity } = rollSpecies(name);
+  const id = makeId();
   return {
-    id: makeId(),
+    id,
     name: name || 'Pixel',
     species,
     rarity,
+    stats: rollStats(id, rarity),
     stage: 'egg',
     hunger: 70,
     happiness: 70,

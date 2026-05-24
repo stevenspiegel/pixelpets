@@ -2,11 +2,21 @@ export type LifeStage = 'egg' | 'baby' | 'child' | 'teen' | 'adult' | 'dead';
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 
+// Persistent base combat stats, rolled at hatch. A future battle system can
+// read these directly or scale them by level (see battleStats in usePet).
+export type BattleStats = {
+  attack: number;
+  defense: number;
+  speed: number;
+  maxHp: number;
+};
+
 export type PetState = {
   id: string;
   name: string;
   species: string;
   rarity: Rarity;
+  stats: BattleStats;
   stage: LifeStage;
   hunger: number;
   happiness: number;
