@@ -144,9 +144,14 @@ const rollStats = (id: string, rarity: Rarity): BattleStats => {
   };
 };
 
-// Level grows with age and is capped. A pure function of the pet's age.
+// Used only to grandfather existing pets: the old age-derived level, kept so
+// migrated pets don't lose power when level became training-driven.
+const ageLevel = (age: number): number =>
+  Math.min(MAX_LEVEL, 1 + Math.floor(Math.max(0, age) / SECONDS_PER_LEVEL));
+
+// Level now comes from training (see trainStat), not age. Stored on the pet.
 export const petLevel = (pet: PetState): number =>
-  Math.min(MAX_LEVEL, 1 + Math.floor(Math.max(0, pet.age) / SECONDS_PER_LEVEL));
+  Math.min(MAX_LEVEL, Math.max(1, pet.level ?? 1));
 
 // Effective combat stats: base × level growth × ascension bonus, plus level.
 export const battleStats = (
@@ -173,6 +178,9 @@ const migratePet = (pet: PetState): PetState => {
   if (!next.id) next = { ...next, id: makeId() };
   if (!next.rarity) next = { ...next, rarity: rarityForSpecies(next.species) };
   if (!next.stats) next = { ...next, stats: rollStats(next.id, next.rarity) };
+  // Pets from before training-driven levels keep their old age-based level as
+  // a starting point; it only changes via training from here on.
+  if (next.level == null) next = { ...next, level: ageLevel(next.age) };
   return next;
 };
 
@@ -221,6 +229,7 @@ const createPet = (name: string): PetState => {
     species,
     rarity,
     stats: rollStats(id, rarity),
+    level: 1,
     stage: 'egg',
     hunger: 70,
     happiness: 70,
@@ -540,7 +549,11 @@ export const usePet = (userId: string | null) => {
       if (c.wallet.tokens < cost) return c;
       const pets = c.pets.map((p) =>
         p.id === petId
-          ? { ...p, stats: { ...p.stats, [stat]: p.stats[stat] + STAT_INCREMENT[stat] } }
+          ? {
+              ...p,
+              stats: { ...p.stats, [stat]: p.stats[stat] + STAT_INCREMENT[stat] },
+              level: Math.min(MAX_LEVEL, (p.level ?? 1) + 1),
+            }
           : p
       );
       return { ...c, pets, wallet: { ...c.wallet, tokens: c.wallet.tokens - cost } };

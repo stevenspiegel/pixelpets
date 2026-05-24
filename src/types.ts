@@ -19,6 +19,7 @@ export type PetState = {
   species: string;
   rarity: Rarity;
   stats: BattleStats;
+  level: number; // battle level — raised by training, not age
   stage: LifeStage;
   hunger: number;
   happiness: number;
