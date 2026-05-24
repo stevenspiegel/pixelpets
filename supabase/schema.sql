@@ -51,6 +51,15 @@ create index if not exists pets_owner_idx on public.pets (owner);
 alter table public.profiles enable row level security;
 alter table public.pets     enable row level security;
 
+-- drop-if-exists guards make this whole script safe to re-run
+drop policy if exists "profiles: own row read"   on public.profiles;
+drop policy if exists "profiles: own row insert" on public.profiles;
+drop policy if exists "profiles: own row update" on public.profiles;
+drop policy if exists "pets: own read"   on public.pets;
+drop policy if exists "pets: own insert" on public.pets;
+drop policy if exists "pets: own update" on public.pets;
+drop policy if exists "pets: own delete" on public.pets;
+
 create policy "profiles: own row read"   on public.profiles for select using (auth.uid() = id);
 create policy "profiles: own row insert" on public.profiles for insert with check (auth.uid() = id);
 create policy "profiles: own row update" on public.profiles for update using (auth.uid() = id);
