@@ -8,8 +8,10 @@ import {
   Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { Alert } from 'react-native';
 import { useAuth } from './src/state/useAuth';
 import { usePet } from './src/state/usePet';
+import { isSupabaseConfigured } from './src/lib/supabase';
 import { LoginScreen } from './src/components/LoginScreen';
 import { HatchScreen } from './src/components/HatchScreen';
 import { GameScreen } from './src/components/GameScreen';
@@ -36,6 +38,7 @@ export default function App() {
     trainStat,
     grantTokens,
     importablePets,
+    scanLocalPets,
     importLocalPets,
     skipImport,
     act,
@@ -60,6 +63,22 @@ export default function App() {
   const handleRemove = () => {
     if (activePet) removePet(activePet.id);
   };
+
+  // Manual recovery of pets saved in this browser's local storage.
+  const handleRestore = async () => {
+    const n = await scanLocalPets();
+    if (n === 0) {
+      const msg = 'No saved pets were found in this browser.';
+      if (Platform.OS === 'web') {
+        // eslint-disable-next-line no-alert
+        if (typeof window !== 'undefined') window.alert(msg);
+      } else {
+        Alert.alert('Restore pets', msg);
+      }
+    }
+    // If pets were found, scanLocalPets set importablePets → ImportScreen shows.
+  };
+  const onRestore = isSupabaseConfigured ? handleRestore : undefined;
 
   let screen: React.ReactNode;
   if (!ready) {
@@ -86,6 +105,7 @@ export default function App() {
         onHatch={handleHatch}
         onLogOut={logOut}
         onCancel={pets.length > 0 ? () => setAddingNew(false) : undefined}
+        onRestore={pets.length === 0 ? onRestore : undefined}
       />
     );
   } else if (activePet && battling) {
@@ -110,6 +130,7 @@ export default function App() {
         onRename={renamePet}
         onTrain={(stat) => trainStat(activePet.id, stat)}
         onBattle={() => setBattling(true)}
+        onRestore={onRestore}
         onLogOut={logOut}
       />
     );

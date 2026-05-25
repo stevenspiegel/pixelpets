@@ -472,6 +472,45 @@ const loadCollection = async (userId: string): Promise<Collection> => {
   return EMPTY;
 };
 
+// Scan ALL local saves on this device (any username key), so a manual restore
+// works even if the local pets were saved under a different username than the
+// current cloud account. Returns a de-duplicated, migrated pet list.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const findLocalPets = async (): Promise<PetState[]> => {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const relevant = keys.filter(
+      (k) => k.startsWith(STORAGE_PREFIX_V2) || k.startsWith(STORAGE_PREFIX_V1)
+    );
+    const seen = new Set<string>();
+    const found: PetState[] = [];
+    for (const key of relevant) {
+      const raw = await AsyncStorage.getItem(key);
+      if (!raw) continue;
+      try {
+        const parsed = JSON.parse(raw);
+        const list: any[] = key.startsWith(STORAGE_PREFIX_V2)
+          ? parsed?.pets ?? []
+          : [parsed];
+        for (const p of list) {
+          if (!p || !p.species) continue;
+          const mp = migratePet(p as PetState);
+          if (!seen.has(mp.id)) {
+            seen.add(mp.id);
+            found.push(mp);
+          }
+        }
+      } catch {
+        // skip unparseable key
+      }
+    }
+    return found;
+  } catch {
+    return [];
+  }
+};
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 // ── Cloud (Supabase) storage ──────────────────────────────────────────────────
 // DB rows are snake_case; PetState is camelCase. Numeric columns are coerced
 // since PostgREST can return bigints as strings.
@@ -621,12 +660,19 @@ export const usePet = (userId: string | null) => {
         wallet: loadedCol.wallet,
       });
       setLoaded(true);
-      // First cloud login with no cloud pets: offer to import local pets.
+      // First cloud login with no cloud pets: offer to import local pets
+      // found anywhere on this device (any username key).
       if (isSupabaseConfigured && loadedCol.pets.length === 0) {
         const done = await AsyncStorage.getItem(importedKey(userId));
         if (cancelled || done) return;
-        const local = await loadCollection(userId);
-        if (!cancelled && local.pets.length > 0) setImportable(local);
+        const localPets = await findLocalPets();
+        if (!cancelled && localPets.length > 0) {
+          setImportable({
+            pets: localPets,
+            activeId: localPets[0].id,
+            wallet: loadedCol.wallet,
+          });
+        }
       }
     })();
     return () => {
@@ -738,18 +784,41 @@ export const usePet = (userId: string | null) => {
     }));
   }, []);
 
-  // Upload the local pets to the cloud account, then stop offering import.
+  // Manual recovery: scan the device for local pets and, if any are found,
+  // open the import screen — regardless of cloud state or the imported flag.
+  // Returns how many were found so the caller can message "none found".
+  const scanLocalPets = useCallback(async (): Promise<number> => {
+    const localPets = await findLocalPets();
+    if (localPets.length > 0) {
+      setImportable({
+        pets: localPets,
+        activeId: localPets[0].id,
+        wallet: colRef.current.wallet,
+      });
+    }
+    return localPets.length;
+  }, []);
+
+  // Merge the found local pets into the current collection (keeping any pets
+  // already in the cloud), then stop offering import. Capped at MAX_PETS.
   const importLocalPets = useCallback(() => {
     const uid = userRef.current;
     setImportable((local) => {
-      if (!local || !uid) return null;
+      if (!local) return null;
       const now = Date.now();
-      setCol({
-        pets: local.pets.map((p) => applyDecay(migratePet(p), now)).slice(0, MAX_PETS),
-        activeId: local.activeId,
-        wallet: local.wallet,
+      setCol((c) => {
+        const byId = new Map(c.pets.map((p) => [p.id, p]));
+        for (const p of local.pets) if (!byId.has(p.id)) byId.set(p.id, p);
+        const merged = Array.from(byId.values())
+          .slice(0, MAX_PETS)
+          .map((p) => applyDecay(migratePet(p), now));
+        return {
+          pets: merged,
+          activeId: c.activeId ?? merged[0]?.id ?? null,
+          wallet: c.wallet,
+        };
       });
-      AsyncStorage.setItem(importedKey(uid), '1').catch(() => {});
+      if (uid) AsyncStorage.setItem(importedKey(uid), '1').catch(() => {});
       return null;
     });
   }, []);
@@ -775,6 +844,8 @@ export const usePet = (userId: string | null) => {
     renamePet,
     trainStat,
     grantTokens,
+    importablePetsCount: importable?.pets.length ?? 0,
+    scanLocalPets,
     importLocalPets,
     skipImport,
     act,
