@@ -32,6 +32,7 @@ type Props = {
   onBattle: () => void;
   onPvp?: () => void;
   onLeaderboard?: () => void;
+  onFriends?: () => void;
   onRestore?: () => void;
   onLogOut: () => void;
 };
@@ -74,6 +75,7 @@ export const GameScreen: React.FC<Props> = ({
   onBattle,
   onPvp,
   onLeaderboard,
+  onFriends,
   onRestore,
   onLogOut,
 }) => {
@@ -304,6 +306,12 @@ export const GameScreen: React.FC<Props> = ({
       {onLeaderboard && (
         <Pressable onPress={onLeaderboard} style={styles.resetButton} hitSlop={8}>
           <Text style={styles.resetText}>🏆 leaderboard</Text>
+        </Pressable>
+      )}
+
+      {onFriends && (
+        <Pressable onPress={onFriends} style={styles.resetButton} hitSlop={8}>
+          <Text style={styles.resetText}>👥 friends</Text>
         </Pressable>
       )}
 
