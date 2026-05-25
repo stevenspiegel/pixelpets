@@ -520,14 +520,17 @@ const petFromRow = (r: any): PetState => ({
 
 const loadCloudCollection = async (): Promise<Collection> => {
   if (!supabase) return EMPTY;
-  const { data: auth } = await supabase.auth.getUser();
-  const uid = auth.user?.id;
+  const { data: sess } = await supabase.auth.getSession();
+  const uid = sess.session?.user?.id;
   if (!uid) return EMPTY;
-  const [{ data: profile }, { data: petRows }] = await Promise.all([
+  const [profileRes, petsRes] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
     supabase.from('pets').select('*').eq('owner', uid),
   ]);
-  const pets = (petRows ?? []).map(petFromRow).map(migratePet);
+  if (profileRes.error) console.warn('[pixelpets] load profile error:', profileRes.error.message);
+  if (petsRes.error) console.warn('[pixelpets] load pets error:', petsRes.error.message);
+  const profile = profileRes.data;
+  const pets = (petsRes.data ?? []).map(petFromRow).map(migratePet);
   const wallet: Wallet = profile
     ? {
         tokens: Number(profile.tokens ?? STARTING_TOKENS),
@@ -546,19 +549,27 @@ const loadCloudCollection = async (): Promise<Collection> => {
 // rows that were removed, and update the profile (wallet + active pet).
 const syncCloudCollection = async (col: Collection): Promise<void> => {
   if (!supabase) return;
-  const { data: auth } = await supabase.auth.getUser();
-  const uid = auth.user?.id;
+  const { data: sess } = await supabase.auth.getSession();
+  const uid = sess.session?.user?.id;
   if (!uid) return;
 
   if (col.pets.length > 0) {
-    await supabase.from('pets').upsert(col.pets.map((p) => petToRow(p, uid)));
-    const idList = col.pets.map((p) => `"${p.id}"`).join(',');
-    await supabase.from('pets').delete().eq('owner', uid).not('id', 'in', `(${idList})`);
+    const up = await supabase.from('pets').upsert(col.pets.map((p) => petToRow(p, uid)));
+    if (up.error) console.warn('[pixelpets] upsert pets error:', up.error.message);
+    // ids are alphanumeric/underscore only, so an unquoted list is safe.
+    const idList = col.pets.map((p) => p.id).join(',');
+    const del = await supabase
+      .from('pets')
+      .delete()
+      .eq('owner', uid)
+      .not('id', 'in', `(${idList})`);
+    if (del.error) console.warn('[pixelpets] prune pets error:', del.error.message);
   } else {
-    await supabase.from('pets').delete().eq('owner', uid);
+    const del = await supabase.from('pets').delete().eq('owner', uid);
+    if (del.error) console.warn('[pixelpets] clear pets error:', del.error.message);
   }
 
-  await supabase
+  const prof = await supabase
     .from('profiles')
     .update({
       tokens: col.wallet.tokens,
@@ -567,8 +578,10 @@ const syncCloudCollection = async (col: Collection): Promise<void> => {
       active_pet_id: col.activeId,
     })
     .eq('id', uid);
+  if (prof.error) console.warn('[pixelpets] update profile error:', prof.error.message);
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
+
 
 
 export const usePet = (userId: string | null) => {
