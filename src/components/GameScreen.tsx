@@ -30,6 +30,8 @@ type Props = {
   onRename: (id: string, name: string) => void;
   onTrain: (stat: StatKey) => void;
   onBattle: () => void;
+  onPvp?: () => void;
+  onLeaderboard?: () => void;
   onRestore?: () => void;
   onLogOut: () => void;
 };
@@ -70,6 +72,8 @@ export const GameScreen: React.FC<Props> = ({
   onRename,
   onTrain,
   onBattle,
+  onPvp,
+  onLeaderboard,
   onRestore,
   onLogOut,
 }) => {
@@ -281,6 +285,25 @@ export const GameScreen: React.FC<Props> = ({
         >
           <Text style={styles.battleText}>⚔️ BATTLE</Text>
           <Text style={styles.battleSub}>fight a wild challenger for ✦ tokens</Text>
+        </Pressable>
+      )}
+
+      {!isEgg && !isDead && onPvp && (
+        <Pressable
+          onPress={onPvp}
+          style={({ pressed }) => [
+            styles.pvpButton,
+            pressed && styles.battleButtonPressed,
+          ]}
+        >
+          <Text style={styles.battleText}>🤺 PvP BATTLE</Text>
+          <Text style={styles.battleSub}>challenge another player's pet</Text>
+        </Pressable>
+      )}
+
+      {onLeaderboard && (
+        <Pressable onPress={onLeaderboard} style={styles.resetButton} hitSlop={8}>
+          <Text style={styles.resetText}>🏆 leaderboard</Text>
         </Pressable>
       )}
 
@@ -529,6 +552,17 @@ const styles = StyleSheet.create({
   battleButtonPressed: {
     transform: [{ translateY: 2 }],
     backgroundColor: '#9a2a4a',
+  },
+  pvpButton: {
+    width: '100%',
+    maxWidth: 380,
+    marginTop: 10,
+    backgroundColor: '#1f3a6a',
+    borderWidth: 3,
+    borderColor: '#5fc0ff',
+    borderRadius: 6,
+    paddingVertical: 12,
+    alignItems: 'center',
   },
   battleText: {
     color: '#fff',

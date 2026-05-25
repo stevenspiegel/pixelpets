@@ -97,3 +97,54 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- ── PvP (asynchronous) ────────────────────────────────────────────────────────
+-- Run this block if you set up the project before PvP existed.
+
+-- Win/loss record on each profile.
+alter table public.profiles add column if not exists pvp_wins   integer not null default 0;
+alter table public.profiles add column if not exists pvp_losses integer not null default 0;
+
+-- Return a random opponent pet that isn't the caller's. SECURITY DEFINER so it
+-- can read across users without exposing the whole pets table via RLS; it only
+-- returns battle-relevant fields plus the owner's username.
+create or replace function public.get_random_opponent()
+returns table (
+  pet_id text, name text, species text, rarity text,
+  stats jsonb, level integer, stage text, ascended boolean, owner_username text
+)
+language sql security definer set search_path = public as $$
+  select p.id, p.name, p.species, p.rarity, p.stats, p.level, p.stage,
+         coalesce(p.ascended, false), pr.username
+  from public.pets p
+  join public.profiles pr on pr.id = p.owner
+  where p.owner <> auth.uid()
+    and p.stage <> 'egg'
+    and p.stage <> 'dead'
+  order by random()
+  limit 1;
+$$;
+grant execute on function public.get_random_opponent() to authenticated;
+
+-- Record a PvP result for the caller (atomic increment).
+create or replace function public.record_pvp_result(won boolean)
+returns void
+language sql security definer set search_path = public as $$
+  update public.profiles
+  set pvp_wins   = pvp_wins   + (case when won then 1 else 0 end),
+      pvp_losses = pvp_losses + (case when won then 0 else 1 end)
+  where id = auth.uid();
+$$;
+grant execute on function public.record_pvp_result(boolean) to authenticated;
+
+-- Top PvP players.
+create or replace function public.pvp_leaderboard()
+returns table (username text, pvp_wins integer, pvp_losses integer)
+language sql security definer set search_path = public as $$
+  select username, pvp_wins, pvp_losses
+  from public.profiles
+  where pvp_wins > 0 or pvp_losses > 0
+  order by pvp_wins desc, pvp_losses asc
+  limit 20;
+$$;
+grant execute on function public.pvp_leaderboard() to authenticated;

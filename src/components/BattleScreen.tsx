@@ -1,25 +1,29 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { PetState } from '../types';
 import {
   BattleState,
   Move,
   MOVES,
   resolveRound,
+  Combatant,
 } from '../battle/engine';
 import { generateOpponent, playerCombatant, battleReward } from '../battle/opponent';
+import { fetchPvpOpponent } from '../battle/pvp';
 import { CreatureSprite } from './CreatureSprite';
 
 type Props = {
   pet: PetState;
+  mode?: 'pve' | 'pvp';
   onReward: (amount: number) => void;
+  onResult?: (won: boolean) => void;
   onExit: () => void;
 };
 
-const newBattle = (pet: PetState): BattleState => ({
+const newBattle = (pet: PetState, enemy: Combatant, intro: string): BattleState => ({
   player: playerCombatant(pet),
-  enemy: generateOpponent(pet),
-  log: ['A wild challenger appears!'],
+  enemy,
+  log: [intro],
   round: 1,
   status: 'active',
 });
@@ -45,32 +49,94 @@ const HpBar: React.FC<{ c: BattleState['player'] }> = ({ c }) => {
   );
 };
 
-export const BattleScreen: React.FC<Props> = ({ pet, onReward, onExit }) => {
-  const [state, setState] = useState<BattleState>(() => newBattle(pet));
+export const BattleScreen: React.FC<Props> = ({
+  pet,
+  mode = 'pve',
+  onReward,
+  onResult,
+  onExit,
+}) => {
+  const isPvp = mode === 'pvp';
+  const [phase, setPhase] = useState<'loading' | 'battling' | 'empty'>(
+    isPvp ? 'loading' : 'battling'
+  );
+  const [state, setState] = useState<BattleState | null>(null);
   const rewardedRef = useRef(false);
+  const resultRef = useRef(false);
   const [reward, setReward] = useState(0);
 
+  const startBattle = useCallback(async () => {
+    rewardedRef.current = false;
+    resultRef.current = false;
+    setReward(0);
+    if (isPvp) {
+      setPhase('loading');
+      setState(null);
+      const enemy = await fetchPvpOpponent();
+      if (!enemy) {
+        setPhase('empty');
+        return;
+      }
+      setState(newBattle(pet, enemy, `${enemy.name} accepts your challenge!`));
+      setPhase('battling');
+    } else {
+      setState(newBattle(pet, generateOpponent(pet), 'A wild challenger appears!'));
+      setPhase('battling');
+    }
+  }, [isPvp, pet]);
+
   useEffect(() => {
+    startBattle();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!state) return;
     if (state.status === 'won' && !rewardedRef.current) {
       rewardedRef.current = true;
       const amt = battleReward(state.enemy.level);
       setReward(amt);
       onReward(amt);
     }
-  }, [state.status, state.enemy.level, onReward]);
+    if ((state.status === 'won' || state.status === 'lost') && !resultRef.current) {
+      resultRef.current = true;
+      onResult?.(state.status === 'won');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.status]);
 
-  const playMove = useCallback(
-    (move: Move) => {
-      setState((s) => (s.status === 'active' ? resolveRound(s, move) : s));
-    },
-    []
-  );
+  const playMove = useCallback((move: Move) => {
+    setState((s) => (s && s.status === 'active' ? resolveRound(s, move) : s));
+  }, []);
 
-  const again = useCallback(() => {
-    rewardedRef.current = false;
-    setReward(0);
-    setState(newBattle(pet));
-  }, [pet]);
+  const title = isPvp ? '⚔️ PvP' : '⚔️ BATTLE';
+
+  if (phase === 'loading') {
+    return (
+      <View style={styles.centerScreen}>
+        <Text style={styles.title}>{title}</Text>
+        <ActivityIndicator color="#fff" style={{ marginTop: 20 }} />
+        <Text style={styles.loadingText}>Finding an opponent…</Text>
+        <Pressable onPress={onExit} style={styles.doneBtn}>
+          <Text style={styles.doneText}>CANCEL</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (phase === 'empty' || !state) {
+    return (
+      <View style={styles.centerScreen}>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.loadingText}>
+          No opponents available yet.{'\n'}Invite a friend to raise a pet!
+        </Text>
+        <Pressable onPress={onExit} style={styles.doneBtn}>
+          <Text style={styles.doneText}>BACK</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   const over = state.status !== 'active';
   const recentLog = state.log.slice(-3);
@@ -78,7 +144,7 @@ export const BattleScreen: React.FC<Props> = ({ pet, onReward, onExit }) => {
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       <View style={styles.topBar}>
-        <Text style={styles.title}>⚔️ BATTLE</Text>
+        <Text style={styles.title}>{title}</Text>
         <Pressable onPress={onExit} hitSlop={8}>
           <Text style={styles.exit}>EXIT</Text>
         </Pressable>
@@ -140,8 +206,8 @@ export const BattleScreen: React.FC<Props> = ({ pet, onReward, onExit }) => {
             <Text style={styles.rewardText}>+✦ {reward} Pixel tokens</Text>
           )}
           <View style={styles.resultButtons}>
-            <Pressable onPress={again} style={({ pressed }) => [styles.againBtn, pressed && styles.moveBtnPressed]}>
-              <Text style={styles.againText}>BATTLE AGAIN</Text>
+            <Pressable onPress={startBattle} style={({ pressed }) => [styles.againBtn, pressed && styles.moveBtnPressed]}>
+              <Text style={styles.againText}>{isPvp ? 'NEW OPPONENT' : 'BATTLE AGAIN'}</Text>
             </Pressable>
             <Pressable onPress={onExit} style={({ pressed }) => [styles.doneBtn, pressed && styles.moveBtnPressed]}>
               <Text style={styles.doneText}>DONE</Text>
@@ -158,6 +224,21 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: 16,
     alignItems: 'center',
+  },
+  centerScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  loadingText: {
+    color: '#d6c8ff',
+    fontFamily: 'Courier',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 24,
+    lineHeight: 20,
   },
   topBar: {
     width: '100%',
