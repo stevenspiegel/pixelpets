@@ -75,6 +75,7 @@ export const GameScreen: React.FC<Props> = ({
 }) => {
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState('');
+  const [statsView, setStatsView] = useState<'care' | 'battle'>('care');
 
   // Leave edit mode when switching to a different pet.
   useEffect(() => {
@@ -178,12 +179,42 @@ export const GameScreen: React.FC<Props> = ({
 
         {!isEgg && !isDead && (
           <View style={styles.statsBlock}>
-            <StatBar label="HUNGER" icon="🍖" color="#ffa040" value={pet.hunger} />
-            <StatBar label="HAPPY" icon="❤️" color="#ff5fa2" value={pet.happiness} />
-            <StatBar label="CLEAN" icon="🧼" color="#5fc0ff" value={pet.cleanliness} />
-            <StatBar label="ENERGY" icon="⚡" color="#ffe34d" value={pet.energy} />
-            <StatBar label="HEALTH" icon="💊" color="#7fee7f" value={pet.health} />
-            <BattleStats pet={pet} tokens={tokens} onTrain={onTrain} />
+            <View style={styles.statsTabs}>
+              <Pressable
+                onPress={() => setStatsView('care')}
+                style={[styles.statsTab, statsView === 'care' && styles.statsTabActive]}
+              >
+                <Text
+                  style={[styles.statsTabText, statsView === 'care' && styles.statsTabTextActive]}
+                >
+                  CARE
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setStatsView('battle')}
+                style={[styles.statsTab, statsView === 'battle' && styles.statsTabActive]}
+              >
+                <Text
+                  style={[styles.statsTabText, statsView === 'battle' && styles.statsTabTextActive]}
+                >
+                  BATTLE
+                </Text>
+              </Pressable>
+            </View>
+
+            {statsView === 'care' ? (
+              <View style={styles.statsFace}>
+                <StatBar label="HUNGER" icon="🍖" color="#ffa040" value={pet.hunger} />
+                <StatBar label="HAPPY" icon="❤️" color="#ff5fa2" value={pet.happiness} />
+                <StatBar label="CLEAN" icon="🧼" color="#5fc0ff" value={pet.cleanliness} />
+                <StatBar label="ENERGY" icon="⚡" color="#ffe34d" value={pet.energy} />
+                <StatBar label="HEALTH" icon="💊" color="#7fee7f" value={pet.health} />
+              </View>
+            ) : (
+              <View style={styles.statsFace}>
+                <BattleStats pet={pet} tokens={tokens} onTrain={onTrain} />
+              </View>
+            )}
           </View>
         )}
 
@@ -405,6 +436,36 @@ const styles = StyleSheet.create({
   statsBlock: {
     marginTop: 14,
     paddingHorizontal: 4,
+  },
+  statsTabs: {
+    flexDirection: 'row',
+    borderWidth: 2,
+    borderColor: '#7a4ed0',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  statsTab: {
+    flex: 1,
+    paddingVertical: 7,
+    alignItems: 'center',
+    backgroundColor: '#2a1a4a',
+  },
+  statsTabActive: {
+    backgroundColor: '#7a4ed0',
+  },
+  statsTabText: {
+    color: '#8a76c0',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+  },
+  statsTabTextActive: {
+    color: '#fff',
+  },
+  statsFace: {
+    minHeight: 150,
   },
   hint: {
     color: '#fff',
