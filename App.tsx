@@ -14,6 +14,7 @@ import { LoginScreen } from './src/components/LoginScreen';
 import { HatchScreen } from './src/components/HatchScreen';
 import { GameScreen } from './src/components/GameScreen';
 import { BattleScreen } from './src/components/BattleScreen';
+import { ImportScreen } from './src/components/ImportScreen';
 
 const SKY = '#1565ad';
 const GRASS = '#12b35a';
@@ -34,6 +35,9 @@ export default function App() {
     renamePet,
     trainStat,
     grantTokens,
+    importablePets,
+    importLocalPets,
+    skipImport,
     act,
   } = usePet(username);
 
@@ -66,6 +70,15 @@ export default function App() {
     );
   } else if (!username) {
     screen = <LoginScreen onLogIn={logIn} onSignUp={signUp} />;
+  } else if (importablePets && importablePets.length > 0 && !addingNew) {
+    screen = (
+      <ImportScreen
+        username={username}
+        pets={importablePets}
+        onImport={importLocalPets}
+        onSkip={skipImport}
+      />
+    );
   } else if (pets.length === 0 || addingNew) {
     screen = (
       <HatchScreen
