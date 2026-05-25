@@ -148,3 +148,133 @@ language sql security definer set search_path = public as $$
   limit 20;
 $$;
 grant execute on function public.pvp_leaderboard() to authenticated;
+
+-- ── Friends (mutual, request-based) ───────────────────────────────────────────
+-- You send a request; when the other player accepts, BOTH are added to each
+-- other's friend list (the friends table stores both directions). Run this
+-- block if you set up the project before friends.
+
+create table if not exists public.friends (
+  owner      uuid not null references public.profiles (id) on delete cascade,
+  friend     uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (owner, friend)
+);
+
+create table if not exists public.friend_requests (
+  from_id    uuid not null references public.profiles (id) on delete cascade,
+  to_id      uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (from_id, to_id)
+);
+
+alter table public.friends         enable row level security;
+alter table public.friend_requests enable row level security;
+grant select on public.friends         to anon, authenticated;
+grant select on public.friend_requests to anon, authenticated;
+
+drop policy if exists "friends: own select" on public.friends;
+create policy "friends: own select" on public.friends for select using (auth.uid() = owner);
+
+drop policy if exists "reqs: mine select" on public.friend_requests;
+create policy "reqs: mine select" on public.friend_requests
+  for select using (auth.uid() = from_id or auth.uid() = to_id);
+
+-- Send a request by username. If the target already requested you, it's
+-- accepted immediately (mutual). Returns 'requested' or 'accepted'.
+create or replace function public.send_friend_request(target text)
+returns text
+language plpgsql security definer set search_path = public as $$
+declare tid uuid; me uuid := auth.uid();
+begin
+  select id into tid from public.profiles where lower(username) = lower(trim(target));
+  if tid is null then raise exception 'No player named %', target; end if;
+  if tid = me then raise exception 'You cannot add yourself'; end if;
+  if exists (select 1 from public.friends where owner = me and friend = tid) then
+    raise exception 'Already friends';
+  end if;
+  if exists (select 1 from public.friend_requests where from_id = tid and to_id = me) then
+    delete from public.friend_requests
+      where (from_id = tid and to_id = me) or (from_id = me and to_id = tid);
+    insert into public.friends (owner, friend) values (me, tid), (tid, me)
+      on conflict do nothing;
+    return 'accepted';
+  end if;
+  insert into public.friend_requests (from_id, to_id) values (me, tid)
+    on conflict do nothing;
+  return 'requested';
+end; $$;
+grant execute on function public.send_friend_request(text) to authenticated;
+
+-- Accept or decline an incoming request from a given username.
+create or replace function public.respond_friend_request(from_user text, accept boolean)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare fid uuid; me uuid := auth.uid();
+begin
+  select id into fid from public.profiles where lower(username) = lower(trim(from_user));
+  if fid is null then return; end if;
+  delete from public.friend_requests where from_id = fid and to_id = me;
+  if accept then
+    insert into public.friends (owner, friend) values (me, fid), (fid, me)
+      on conflict do nothing;
+  end if;
+end; $$;
+grant execute on function public.respond_friend_request(text, boolean) to authenticated;
+
+-- Incoming pending requests for the caller.
+create or replace function public.list_friend_requests()
+returns table (username text)
+language sql security definer set search_path = public as $$
+  select p.username
+  from public.friend_requests r
+  join public.profiles p on p.id = r.from_id
+  where r.to_id = auth.uid()
+  order by r.created_at;
+$$;
+grant execute on function public.list_friend_requests() to authenticated;
+
+-- The caller's friends, with profile summary + pet count.
+create or replace function public.list_friends()
+returns table (username text, pvp_wins integer, pvp_losses integer, pet_count bigint)
+language sql security definer set search_path = public as $$
+  select p.username, p.pvp_wins, p.pvp_losses,
+         (select count(*) from public.pets pt where pt.owner = p.id) as pet_count
+  from public.friends f
+  join public.profiles p on p.id = f.friend
+  where f.owner = auth.uid()
+  order by p.username;
+$$;
+grant execute on function public.list_friends() to authenticated;
+
+-- Remove a friend: drop both directions and any pending requests.
+create or replace function public.remove_friend(target text)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare fid uuid; me uuid := auth.uid();
+begin
+  select id into fid from public.profiles where lower(username) = lower(trim(target));
+  if fid is null then return; end if;
+  delete from public.friends
+    where (owner = me and friend = fid) or (owner = fid and friend = me);
+  delete from public.friend_requests
+    where (from_id = me and to_id = fid) or (from_id = fid and to_id = me);
+end; $$;
+grant execute on function public.remove_friend(text) to authenticated;
+
+-- A friend's pets (battle fields). Only returns rows if target is your friend.
+create or replace function public.get_friend_pets(target text)
+returns table (
+  pet_id text, name text, species text, rarity text,
+  stats jsonb, level integer, stage text, ascended boolean
+)
+language sql security definer set search_path = public as $$
+  select pt.id, pt.name, pt.species, pt.rarity, pt.stats, pt.level, pt.stage,
+         coalesce(pt.ascended, false)
+  from public.pets pt
+  join public.profiles p on p.id = pt.owner
+  join public.friends f on f.friend = p.id and f.owner = auth.uid()
+  where lower(p.username) = lower(trim(target))
+  order by pt.created_at;
+$$;
+grant execute on function public.get_friend_pets(text) to authenticated;

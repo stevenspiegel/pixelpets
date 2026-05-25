@@ -18,6 +18,7 @@ import { GameScreen } from './src/components/GameScreen';
 import { BattleScreen } from './src/components/BattleScreen';
 import { ImportScreen } from './src/components/ImportScreen';
 import { LeaderboardScreen } from './src/components/LeaderboardScreen';
+import { FriendsScreen } from './src/components/FriendsScreen';
 import { recordPvpResult } from './src/battle/pvp';
 
 const SKY = '#1565ad';
@@ -48,7 +49,9 @@ export default function App() {
 
   const [addingNew, setAddingNew] = useState(false);
   // null = game screen; 'pve'/'pvp' = battle; 'leaderboard' = leaderboard.
-  const [view, setView] = useState<null | 'pve' | 'pvp' | 'leaderboard'>(null);
+  const [view, setView] = useState<
+    null | 'pve' | 'pvp' | 'leaderboard' | 'friends'
+  >(null);
 
   // Whenever the user changes (login/logout), reset transient overlays.
   useEffect(() => {
@@ -123,6 +126,8 @@ export default function App() {
     );
   } else if (view === 'leaderboard' && username) {
     screen = <LeaderboardScreen username={username} onExit={() => setView(null)} />;
+  } else if (view === 'friends' && username) {
+    screen = <FriendsScreen onExit={() => setView(null)} />;
   } else if (activePet) {
     screen = (
       <GameScreen
@@ -139,6 +144,7 @@ export default function App() {
         onBattle={() => setView('pve')}
         onPvp={isSupabaseConfigured ? () => setView('pvp') : undefined}
         onLeaderboard={isSupabaseConfigured ? () => setView('leaderboard') : undefined}
+        onFriends={isSupabaseConfigured ? () => setView('friends') : undefined}
         onRestore={onRestore}
         onLogOut={logOut}
       />

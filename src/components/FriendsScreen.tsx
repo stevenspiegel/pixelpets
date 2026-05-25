@@ -1,0 +1,421 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
+import {
+  Friend,
+  FriendPet,
+  sendFriendRequest,
+  listFriends,
+  listFriendRequests,
+  respondFriendRequest,
+  removeFriend,
+  getFriendPets,
+  friendPetToPet,
+} from '../social/friends';
+import { battleStats, speciesName } from '../state/usePet';
+import { CreatureSprite } from './CreatureSprite';
+import { RarityBadge } from './RarityBadge';
+
+type Props = {
+  onExit: () => void;
+};
+
+export const FriendsScreen: React.FC<Props> = ({ onExit }) => {
+  const [friends, setFriends] = useState<Friend[] | null>(null);
+  const [requests, setRequests] = useState<string[]>([]);
+  const [draft, setDraft] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState<Friend | null>(null);
+
+  const refresh = useCallback(async () => {
+    const [f, r] = await Promise.all([listFriends(), listFriendRequests()]);
+    setFriends(f);
+    setRequests(r);
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const onSend = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const res = await sendFriendRequest(draft);
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setNotice(
+      res.status === 'accepted'
+        ? `You're now friends with ${draft.trim()}!`
+        : `Request sent to ${draft.trim()}.`
+    );
+    setDraft('');
+    refresh();
+  };
+
+  const onRespond = async (fromUser: string, accept: boolean) => {
+    await respondFriendRequest(fromUser, accept);
+    refresh();
+  };
+
+  const onRemove = async (username: string) => {
+    await removeFriend(username);
+    refresh();
+  };
+
+  if (selected) {
+    return (
+      <FriendProfile
+        friend={selected}
+        onBack={() => setSelected(null)}
+        onRemove={() => {
+          onRemove(selected.username);
+          setSelected(null);
+        }}
+      />
+    );
+  }
+
+  return (
+    <ScrollView contentContainerStyle={styles.scroll}>
+      <View style={styles.topBar}>
+        <Text style={styles.title}>👥 FRIENDS</Text>
+        <Pressable onPress={onExit} hitSlop={8}>
+          <Text style={styles.exit}>BACK</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.addRow}>
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          placeholder="add by username"
+          placeholderTextColor="#8a76c0"
+          style={styles.input}
+          autoCapitalize="none"
+          autoCorrect={false}
+          maxLength={20}
+          onSubmitEditing={onSend}
+        />
+        <Pressable onPress={onSend} disabled={busy} style={styles.addBtn}>
+          <Text style={styles.addBtnText}>{busy ? '…' : 'ADD'}</Text>
+        </Pressable>
+      </View>
+      {error && <Text style={styles.error}>{error}</Text>}
+      {notice && <Text style={styles.notice}>{notice}</Text>}
+
+      {requests.length > 0 && (
+        <View style={styles.list}>
+          <Text style={styles.sectionLabel}>FRIEND REQUESTS</Text>
+          {requests.map((u) => (
+            <View key={u} style={styles.friendRow}>
+              <Text style={styles.friendName}>@{u}</Text>
+              <View style={styles.reqButtons}>
+                <Pressable onPress={() => onRespond(u, true)} hitSlop={6}>
+                  <Text style={styles.accept}>accept</Text>
+                </Pressable>
+                <Pressable onPress={() => onRespond(u, false)} hitSlop={6}>
+                  <Text style={styles.decline}>decline</Text>
+                </Pressable>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {friends === null ? (
+        <ActivityIndicator color="#fff" style={{ marginTop: 24 }} />
+      ) : friends.length === 0 ? (
+        <Text style={styles.empty}>
+          No friends yet. Add someone by their username above!
+        </Text>
+      ) : (
+        <View style={styles.list}>
+          {requests.length > 0 && <Text style={styles.sectionLabel}>FRIENDS</Text>}
+          {friends.map((f) => (
+            <Pressable
+              key={f.username}
+              onPress={() => setSelected(f)}
+              style={({ pressed }) => [styles.friendRow, pressed && styles.rowPressed]}
+            >
+              <Text style={styles.friendName}>@{f.username}</Text>
+              <Text style={styles.friendMeta}>
+                {f.petCount} 🐾 · {f.wins}W/{f.losses}L
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+    </ScrollView>
+  );
+};
+
+const FriendProfile: React.FC<{
+  friend: Friend;
+  onBack: () => void;
+  onRemove: () => void;
+}> = ({ friend, onBack, onRemove }) => {
+  const [pets, setPets] = useState<FriendPet[] | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getFriendPets(friend.username).then((p) => {
+      if (active) setPets(p);
+    });
+    return () => {
+      active = false;
+    };
+  }, [friend.username]);
+
+  return (
+    <ScrollView contentContainerStyle={styles.scroll}>
+      <View style={styles.topBar}>
+        <Pressable onPress={onBack} hitSlop={8}>
+          <Text style={styles.exit}>← FRIENDS</Text>
+        </Pressable>
+        <Pressable onPress={onRemove} hitSlop={8}>
+          <Text style={styles.removeText}>remove</Text>
+        </Pressable>
+      </View>
+
+      <Text style={styles.profileName}>@{friend.username}</Text>
+      <Text style={styles.profileMeta}>
+        PvP {friend.wins}W · {friend.losses}L
+      </Text>
+
+      {pets === null ? (
+        <ActivityIndicator color="#fff" style={{ marginTop: 24 }} />
+      ) : pets.length === 0 ? (
+        <Text style={styles.empty}>No pets to show.</Text>
+      ) : (
+        <View style={styles.petGrid}>
+          {pets.map((fp) => {
+            const stats = battleStats(friendPetToPet(fp));
+            const showSprite = fp.stage !== 'egg' && fp.stage !== 'dead';
+            return (
+              <View key={fp.id} style={styles.petCard}>
+                {showSprite ? (
+                  <CreatureSprite
+                    species={fp.species}
+                    stage={fp.stage}
+                    ascended={fp.ascended}
+                    size={64}
+                  />
+                ) : (
+                  <Text style={styles.eggEmoji}>🥚</Text>
+                )}
+                <Text style={styles.petName} numberOfLines={1}>
+                  {fp.name}
+                </Text>
+                <Text style={styles.petKind}>
+                  LV {stats.level} · {speciesName(fp.species)}
+                </Text>
+                <RarityBadge rarity={fp.rarity} />
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  scroll: { flexGrow: 1, padding: 16, alignItems: 'center' },
+  topBar: {
+    width: '100%',
+    maxWidth: 380,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  title: {
+    color: '#fff',
+    fontFamily: 'Courier',
+    fontSize: 16,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+  },
+  exit: {
+    color: '#ff8aa3',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+  },
+  removeText: {
+    color: '#ff8aa3',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    letterSpacing: 1,
+  },
+  addRow: {
+    width: '100%',
+    maxWidth: 380,
+    flexDirection: 'row',
+  },
+  input: {
+    flex: 1,
+    backgroundColor: '#2a1a4a',
+    borderWidth: 2,
+    borderColor: '#7a4ed0',
+    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    color: '#fff',
+    fontFamily: 'Courier',
+    fontSize: 14,
+  },
+  addBtn: {
+    marginLeft: 8,
+    backgroundColor: '#7a4ed0',
+    borderRadius: 4,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+  },
+  addBtnText: {
+    color: '#fff',
+    fontFamily: 'Courier',
+    fontSize: 13,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  error: {
+    color: '#ff8aa3',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    marginTop: 8,
+  },
+  notice: {
+    color: '#7fee7f',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    marginTop: 8,
+    textAlign: 'center',
+    maxWidth: 340,
+  },
+  sectionLabel: {
+    color: '#8a76c0',
+    fontFamily: 'Courier',
+    fontSize: 11,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+    marginBottom: 6,
+  },
+  reqButtons: {
+    flexDirection: 'row',
+  },
+  accept: {
+    color: '#7fee7f',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginLeft: 12,
+  },
+  decline: {
+    color: '#ff8aa3',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    marginLeft: 12,
+  },
+  empty: {
+    color: '#d6c8ff',
+    fontFamily: 'Courier',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 24,
+    maxWidth: 320,
+    lineHeight: 20,
+  },
+  list: {
+    width: '100%',
+    maxWidth: 380,
+    marginTop: 14,
+  },
+  friendRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#2a1a4a',
+    borderWidth: 2,
+    borderColor: '#7a4ed0',
+    borderRadius: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
+  rowPressed: { backgroundColor: '#3a2070' },
+  friendName: {
+    color: '#fff',
+    fontFamily: 'Courier',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  friendMeta: {
+    color: '#8a76c0',
+    fontFamily: 'Courier',
+    fontSize: 12,
+  },
+  profileName: {
+    color: '#fff',
+    fontFamily: 'Courier',
+    fontSize: 22,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+    marginTop: 6,
+  },
+  profileMeta: {
+    color: '#d6c8ff',
+    fontFamily: 'Courier',
+    fontSize: 13,
+    marginBottom: 16,
+  },
+  petGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    maxWidth: 380,
+  },
+  petCard: {
+    width: 100,
+    alignItems: 'center',
+    margin: 6,
+    backgroundColor: '#2a1a4a',
+    borderWidth: 2,
+    borderColor: '#7a4ed0',
+    borderRadius: 4,
+    paddingVertical: 8,
+  },
+  eggEmoji: {
+    fontSize: 48,
+    lineHeight: 64,
+  },
+  petName: {
+    color: '#fff',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginTop: 4,
+    maxWidth: 90,
+  },
+  petKind: {
+    color: '#8a76c0',
+    fontFamily: 'Courier',
+    fontSize: 10,
+    marginBottom: 4,
+  },
+});
