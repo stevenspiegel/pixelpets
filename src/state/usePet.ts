@@ -15,6 +15,9 @@ const STORAGE_PREFIX_V1 = '@pixelpets/pet/v1/';   // legacy single-pet save
 const STORAGE_PREFIX_V2 = '@pixelpets/pets/v2/';  // collection of pets
 const v1Key = (userId: string) => `${STORAGE_PREFIX_V1}${userId}`;
 const v2Key = (userId: string) => `${STORAGE_PREFIX_V2}${userId}`;
+// Marks that a user has already imported (or declined) their local pets into
+// the cloud, so we don't keep prompting.
+const importedKey = (userId: string) => `@pixelpets/imported/v1/${userId}`;
 
 export const MAX_PETS = 8;
 
@@ -587,6 +590,8 @@ const syncCloudCollection = async (col: Collection): Promise<void> => {
 export const usePet = (userId: string | null) => {
   const [col, setCol] = useState<Collection>(EMPTY);
   const [loaded, setLoaded] = useState(false);
+  // Local pets found on this device, offered for one-time import to the cloud.
+  const [importable, setImportable] = useState<Collection | null>(null);
   const colRef = useRef<Collection>(col);
   const userRef = useRef<string | null>(userId);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -597,6 +602,7 @@ export const usePet = (userId: string | null) => {
 
   useEffect(() => {
     userRef.current = userId;
+    setImportable(null);
     if (!userId) {
       setCol(EMPTY);
       setLoaded(true);
@@ -615,6 +621,13 @@ export const usePet = (userId: string | null) => {
         wallet: loadedCol.wallet,
       });
       setLoaded(true);
+      // First cloud login with no cloud pets: offer to import local pets.
+      if (isSupabaseConfigured && loadedCol.pets.length === 0) {
+        const done = await AsyncStorage.getItem(importedKey(userId));
+        if (cancelled || done) return;
+        const local = await loadCollection(userId);
+        if (!cancelled && local.pets.length > 0) setImportable(local);
+      }
     })();
     return () => {
       cancelled = true;
@@ -725,6 +738,28 @@ export const usePet = (userId: string | null) => {
     }));
   }, []);
 
+  // Upload the local pets to the cloud account, then stop offering import.
+  const importLocalPets = useCallback(() => {
+    const uid = userRef.current;
+    setImportable((local) => {
+      if (!local || !uid) return null;
+      const now = Date.now();
+      setCol({
+        pets: local.pets.map((p) => applyDecay(migratePet(p), now)).slice(0, MAX_PETS),
+        activeId: local.activeId,
+        wallet: local.wallet,
+      });
+      AsyncStorage.setItem(importedKey(uid), '1').catch(() => {});
+      return null;
+    });
+  }, []);
+
+  const skipImport = useCallback(() => {
+    const uid = userRef.current;
+    if (uid) AsyncStorage.setItem(importedKey(uid), '1').catch(() => {});
+    setImportable(null);
+  }, []);
+
   const activePet = col.pets.find((p) => p.id === col.activeId) ?? null;
 
   return {
@@ -733,12 +768,15 @@ export const usePet = (userId: string | null) => {
     activeId: col.activeId,
     tokens: col.wallet.tokens,
     loaded,
+    importablePets: importable?.pets ?? null,
     hatch,
     switchPet,
     removePet,
     renamePet,
     trainStat,
     grantTokens,
+    importLocalPets,
+    skipImport,
     act,
   };
 };
