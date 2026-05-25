@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Image } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Image } from 'react-native';
 import { PetState, Rarity } from '../types';
 import { SPRITES, hasSprite } from '../sprites';
 import { imageSpriteFor } from '../sprites/images';
@@ -36,11 +36,7 @@ export const PetSwitcher: React.FC<Props> = ({
 }) => {
   const canAdd = pets.length < maxPets;
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.scroll}
-    >
+    <View style={styles.wrap}>
       {pets.map((pet) => {
         const active = pet.id === activeId;
         const color = RARITY_COLOR[pet.rarity];
@@ -92,19 +88,22 @@ export const PetSwitcher: React.FC<Props> = ({
           <Text style={styles.name}>NEW</Text>
         </Pressable>
       )}
-    </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  scroll: {
-    paddingHorizontal: 4,
+  wrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     paddingVertical: 4,
   },
   tile: {
     width: 64,
     height: 72,
     marginHorizontal: 4,
+    marginVertical: 4,
     borderWidth: 2,
     borderColor: '#7a4ed0',
     borderRadius: 4,
