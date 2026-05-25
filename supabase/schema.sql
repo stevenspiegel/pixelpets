@@ -51,6 +51,13 @@ create index if not exists pets_owner_idx on public.pets (owner);
 alter table public.profiles enable row level security;
 alter table public.pets     enable row level security;
 
+-- Table-level privileges (required IN ADDITION to RLS — without these the
+-- client gets "permission denied for table"). RLS still restricts which rows
+-- each user can touch; these grants just allow the operations.
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on public.profiles to anon, authenticated;
+grant select, insert, update, delete on public.pets     to anon, authenticated;
+
 -- drop-if-exists guards make this whole script safe to re-run
 drop policy if exists "profiles: own row read"   on public.profiles;
 drop policy if exists "profiles: own row insert" on public.profiles;
