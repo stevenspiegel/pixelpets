@@ -30,6 +30,7 @@ type Props = {
   onRename: (id: string, name: string) => void;
   onTrain: (stat: StatKey) => void;
   onBattle: () => void;
+  onRestore?: () => void;
   onLogOut: () => void;
 };
 
@@ -69,6 +70,7 @@ export const GameScreen: React.FC<Props> = ({
   onRename,
   onTrain,
   onBattle,
+  onRestore,
   onLogOut,
 }) => {
   const [editingName, setEditingName] = useState(false);
@@ -259,6 +261,11 @@ export const GameScreen: React.FC<Props> = ({
           {isDead ? `bury ${pet.name.toLowerCase()}` : `release ${pet.name.toLowerCase()}`}
         </Text>
       </Pressable>
+      {onRestore && (
+        <Pressable onPress={onRestore} style={styles.resetButton} hitSlop={8}>
+          <Text style={styles.resetText}>restore pets from this device</Text>
+        </Pressable>
+      )}
     </ScrollView>
   );
 };

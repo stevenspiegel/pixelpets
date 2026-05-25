@@ -15,9 +15,16 @@ type Props = {
   onHatch: (name: string) => void;
   onLogOut: () => void;
   onCancel?: () => void;
+  onRestore?: () => void;
 };
 
-export const HatchScreen: React.FC<Props> = ({ username, onHatch, onLogOut, onCancel }) => {
+export const HatchScreen: React.FC<Props> = ({
+  username,
+  onHatch,
+  onLogOut,
+  onCancel,
+  onRestore,
+}) => {
   const [name, setName] = useState('');
   return (
     <KeyboardAvoidingView
@@ -63,6 +70,11 @@ export const HatchScreen: React.FC<Props> = ({ username, onHatch, onLogOut, onCa
       {onCancel && (
         <Pressable onPress={onCancel} style={styles.cancel} hitSlop={8}>
           <Text style={styles.cancelText}>← back to my pets</Text>
+        </Pressable>
+      )}
+      {onRestore && (
+        <Pressable onPress={onRestore} style={styles.cancel} hitSlop={8}>
+          <Text style={styles.cancelText}>restore pets from this device</Text>
         </Pressable>
       )}
     </KeyboardAvoidingView>
