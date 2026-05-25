@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { AuthResult } from '../state/useAuth';
+import { isSupabaseConfigured } from '../lib/supabase';
 
 type Props = {
   onLogIn: (username: string, password: string) => Promise<AuthResult>;
@@ -121,7 +122,9 @@ export const LoginScreen: React.FC<Props> = ({ onLogIn, onSignUp }) => {
       </Pressable>
 
       <Text style={styles.note}>
-        Accounts are stored on this device only.
+        {isSupabaseConfigured
+          ? 'Your pets sync across devices — log in anywhere.'
+          : 'Accounts are stored on this device only.'}
       </Text>
     </KeyboardAvoidingView>
   );
