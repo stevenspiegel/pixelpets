@@ -17,6 +17,8 @@ import { HatchScreen } from './src/components/HatchScreen';
 import { GameScreen } from './src/components/GameScreen';
 import { BattleScreen } from './src/components/BattleScreen';
 import { ImportScreen } from './src/components/ImportScreen';
+import { LeaderboardScreen } from './src/components/LeaderboardScreen';
+import { recordPvpResult } from './src/battle/pvp';
 
 const SKY = '#1565ad';
 const GRASS = '#12b35a';
@@ -45,12 +47,13 @@ export default function App() {
   } = usePet(username);
 
   const [addingNew, setAddingNew] = useState(false);
-  const [battling, setBattling] = useState(false);
+  // null = game screen; 'pve'/'pvp' = battle; 'leaderboard' = leaderboard.
+  const [view, setView] = useState<null | 'pve' | 'pvp' | 'leaderboard'>(null);
 
   // Whenever the user changes (login/logout), reset transient overlays.
   useEffect(() => {
     setAddingNew(false);
-    setBattling(false);
+    setView(null);
   }, [username]);
 
   const ready = authLoaded && (!username || petLoaded);
@@ -108,14 +111,18 @@ export default function App() {
         onRestore={pets.length === 0 ? onRestore : undefined}
       />
     );
-  } else if (activePet && battling) {
+  } else if (activePet && (view === 'pve' || view === 'pvp')) {
     screen = (
       <BattleScreen
         pet={activePet}
+        mode={view}
         onReward={grantTokens}
-        onExit={() => setBattling(false)}
+        onResult={view === 'pvp' ? recordPvpResult : undefined}
+        onExit={() => setView(null)}
       />
     );
+  } else if (view === 'leaderboard' && username) {
+    screen = <LeaderboardScreen username={username} onExit={() => setView(null)} />;
   } else if (activePet) {
     screen = (
       <GameScreen
@@ -129,7 +136,9 @@ export default function App() {
         onRemove={handleRemove}
         onRename={renamePet}
         onTrain={(stat) => trainStat(activePet.id, stat)}
-        onBattle={() => setBattling(true)}
+        onBattle={() => setView('pve')}
+        onPvp={isSupabaseConfigured ? () => setView('pvp') : undefined}
+        onLeaderboard={isSupabaseConfigured ? () => setView('leaderboard') : undefined}
         onRestore={onRestore}
         onLogOut={logOut}
       />
