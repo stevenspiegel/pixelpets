@@ -9,6 +9,12 @@ type SpriteKey = LifeStage | 'ascended';
 type StageImages = Partial<Record<SpriteKey, ImageSourcePropType>>;
 
 export const IMAGE_SPRITES: Record<string, StageImages> = {
+  '🐢': {
+    baby: require('../../assets/sprites/turtle-baby.png'),
+    child: require('../../assets/sprites/turtle-child.png'),
+    teen: require('../../assets/sprites/turtle-teen.png'),
+    adult: require('../../assets/sprites/turtle-adult.png'),
+  },
   '🐉': {
     baby: require('../../assets/sprites/dragon-baby.png'),
     child: require('../../assets/sprites/dragon-child.png'),
