@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   PetState,
   ActionKind,
@@ -468,11 +469,114 @@ const loadCollection = async (userId: string): Promise<Collection> => {
   return EMPTY;
 };
 
+// ── Cloud (Supabase) storage ──────────────────────────────────────────────────
+// DB rows are snake_case; PetState is camelCase. Numeric columns are coerced
+// since PostgREST can return bigints as strings.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const petToRow = (p: PetState, owner: string) => ({
+  id: p.id,
+  owner,
+  name: p.name,
+  species: p.species,
+  rarity: p.rarity,
+  stats: p.stats,
+  level: p.level,
+  stage: p.stage,
+  hunger: p.hunger,
+  happiness: p.happiness,
+  cleanliness: p.cleanliness,
+  energy: p.energy,
+  health: p.health,
+  age: p.age,
+  born_at: p.bornAt,
+  last_tick: p.lastTick,
+  asleep: p.asleep,
+  poops: p.poops,
+  sick: p.sick,
+  ascended: p.ascended ?? false,
+});
+
+const petFromRow = (r: any): PetState => ({
+  id: r.id,
+  name: r.name,
+  species: r.species,
+  rarity: r.rarity,
+  stats: r.stats,
+  level: Number(r.level),
+  stage: r.stage,
+  hunger: Number(r.hunger),
+  happiness: Number(r.happiness),
+  cleanliness: Number(r.cleanliness),
+  energy: Number(r.energy),
+  health: Number(r.health),
+  age: Number(r.age),
+  bornAt: Number(r.born_at),
+  lastTick: Number(r.last_tick),
+  asleep: !!r.asleep,
+  poops: Number(r.poops),
+  sick: !!r.sick,
+  ascended: !!r.ascended,
+});
+
+const loadCloudCollection = async (): Promise<Collection> => {
+  if (!supabase) return EMPTY;
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth.user?.id;
+  if (!uid) return EMPTY;
+  const [{ data: profile }, { data: petRows }] = await Promise.all([
+    supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
+    supabase.from('pets').select('*').eq('owner', uid),
+  ]);
+  const pets = (petRows ?? []).map(petFromRow).map(migratePet);
+  const wallet: Wallet = profile
+    ? {
+        tokens: Number(profile.tokens ?? STARTING_TOKENS),
+        earnDate: profile.earn_date ?? '',
+        earnedToday: Number(profile.earned_today ?? 0),
+      }
+    : emptyWallet();
+  const activeId =
+    profile?.active_pet_id && pets.some((p) => p.id === profile.active_pet_id)
+      ? profile.active_pet_id
+      : pets[0]?.id ?? null;
+  return { pets, activeId, wallet };
+};
+
+// Make the DB match the client collection: upsert current pets, delete any
+// rows that were removed, and update the profile (wallet + active pet).
+const syncCloudCollection = async (col: Collection): Promise<void> => {
+  if (!supabase) return;
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth.user?.id;
+  if (!uid) return;
+
+  if (col.pets.length > 0) {
+    await supabase.from('pets').upsert(col.pets.map((p) => petToRow(p, uid)));
+    const idList = col.pets.map((p) => `"${p.id}"`).join(',');
+    await supabase.from('pets').delete().eq('owner', uid).not('id', 'in', `(${idList})`);
+  } else {
+    await supabase.from('pets').delete().eq('owner', uid);
+  }
+
+  await supabase
+    .from('profiles')
+    .update({
+      tokens: col.wallet.tokens,
+      earn_date: col.wallet.earnDate,
+      earned_today: col.wallet.earnedToday,
+      active_pet_id: col.activeId,
+    })
+    .eq('id', uid);
+};
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+
 export const usePet = (userId: string | null) => {
   const [col, setCol] = useState<Collection>(EMPTY);
   const [loaded, setLoaded] = useState(false);
   const colRef = useRef<Collection>(col);
   const userRef = useRef<string | null>(userId);
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     colRef.current = col;
@@ -488,12 +592,14 @@ export const usePet = (userId: string | null) => {
     let cancelled = false;
     setLoaded(false);
     (async () => {
-      const loaded = await loadCollection(userId);
+      const loadedCol = isSupabaseConfigured
+        ? await loadCloudCollection()
+        : await loadCollection(userId);
       if (cancelled) return;
       setCol({
-        pets: loaded.pets.map((p) => applyDecay(p, Date.now())),
-        activeId: loaded.activeId,
-        wallet: loaded.wallet,
+        pets: loadedCol.pets.map((p) => applyDecay(p, Date.now())),
+        activeId: loadedCol.activeId,
+        wallet: loadedCol.wallet,
       });
       setLoaded(true);
     })();
@@ -502,8 +608,17 @@ export const usePet = (userId: string | null) => {
     };
   }, [userId]);
 
+  // Persist on change. Cloud sync is debounced so the decay tick doesn't
+  // hammer the database; local storage writes immediately.
   useEffect(() => {
     if (!userId || !loaded) return;
+    if (isSupabaseConfigured) {
+      if (syncTimer.current) clearTimeout(syncTimer.current);
+      syncTimer.current = setTimeout(() => {
+        syncCloudCollection(col).catch(() => {});
+      }, 2000);
+      return;
+    }
     AsyncStorage.setItem(v2Key(userId), JSON.stringify(col)).catch(() => {});
   }, [col, userId, loaded]);
 
