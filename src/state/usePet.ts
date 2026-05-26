@@ -535,14 +535,11 @@ const findLocalPets = async (): Promise<PetState[]> => {
 // DB rows are snake_case; PetState is camelCase. Numeric columns are coerced
 // since PostgREST can return bigints as strings.
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const petToRow = (p: PetState, owner: string) => ({
+// Only the client-writable (care) columns. Stats/level/rarity/species/ascended
+// are server-owned (set by RPCs) and locked from direct client writes.
+const petCareRow = (p: PetState) => ({
   id: p.id,
-  owner,
   name: p.name,
-  species: p.species,
-  rarity: p.rarity,
-  stats: p.stats,
-  level: p.level,
   stage: p.stage,
   hunger: p.hunger,
   happiness: p.happiness,
@@ -550,12 +547,10 @@ const petToRow = (p: PetState, owner: string) => ({
   energy: p.energy,
   health: p.health,
   age: p.age,
-  born_at: p.bornAt,
   last_tick: p.lastTick,
   asleep: p.asleep,
   poops: p.poops,
   sick: p.sick,
-  ascended: p.ascended ?? false,
 });
 
 const petFromRow = (r: any): PetState => ({
@@ -616,7 +611,7 @@ const syncCloudCollection = async (col: Collection): Promise<void> => {
   if (!uid) return;
 
   if (col.pets.length > 0) {
-    const up = await supabase.from('pets').upsert(col.pets.map((p) => petToRow(p, uid)));
+    const up = await supabase.from('pets').upsert(col.pets.map((p) => petCareRow(p)));
     if (up.error) console.warn('[pixelpets] upsert pets error:', up.error.message);
     // ids are alphanumeric/underscore only, so an unquoted list is safe.
     const idList = col.pets.map((p) => p.id).join(',');
@@ -722,25 +717,28 @@ export const usePet = (userId: string | null) => {
 
   const hatch = useCallback((name: string) => {
     if (!userRef.current) return;
-    const pet = createPet(name);
     if (isSupabaseConfigured) {
-      // Server charges the egg cost and inserts the pet atomically; we only add
-      // it locally (with the authoritative balance) once it confirms.
+      // Server rolls the species/rarity/stats, charges the egg cost, and inserts
+      // the pet — nothing about it is client-supplied, so it can't be forged.
       (async () => {
-        const { data, error } = await supabase!.rpc('hatch_pet', { p_pet: pet });
+        const { data, error } = await supabase!.rpc('hatch_pet', { p_name: name });
         if (error) {
           console.warn('[pixelpets] hatch error:', error.message);
           return;
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res = data as any;
+        const pet = applyDecay(petFromRow(res.pet), Date.now());
         setCol((c) => ({
           ...c,
           pets: c.pets.length >= MAX_PETS ? c.pets : [...c.pets, pet],
           activeId: pet.id,
-          wallet: { ...c.wallet, tokens: Number(data) },
+          wallet: { ...c.wallet, tokens: Number(res.tokens) },
         }));
       })();
       return;
     }
+    const pet = createPet(name);
     setCol((c) => {
       if (c.pets.length >= MAX_PETS) return c;
       if (c.wallet.tokens < EGG_COST) return c;
@@ -763,6 +761,19 @@ export const usePet = (userId: string | null) => {
       const activeId =
         c.activeId === id ? remaining[0]?.id ?? null : c.activeId;
       return { ...c, pets: remaining, activeId };
+    });
+  }, []);
+
+  // Re-read the collection from the cloud, replacing local state. Used after a
+  // marketplace transfer (so an adopted pet appears and a sold one disappears)
+  // and to revert a rejected optimistic change. No-op in local-only mode.
+  const reloadCollection = useCallback(async () => {
+    if (!isSupabaseConfigured || !userRef.current) return;
+    const fresh = await loadCloudCollection();
+    setCol({
+      pets: fresh.pets.map((p) => applyDecay(p, Date.now())),
+      activeId: fresh.activeId,
+      wallet: fresh.wallet,
     });
   }, []);
 
@@ -806,7 +817,21 @@ export const usePet = (userId: string | null) => {
         }
       })();
     }
-  }, []);
+    // Ascension is now a locked column, so persist it via RPC (the setCol above
+    // applied it optimistically). Revert from the cloud if the server rejects.
+    if (cloud && kind === 'ascend') {
+      const id = colRef.current.activeId;
+      if (id) {
+        (async () => {
+          const { error } = await supabase!.rpc('ascend_pet', { p_pet_id: id });
+          if (error) {
+            console.warn('[pixelpets] ascend error:', error.message);
+            await reloadCollection();
+          }
+        })();
+      }
+    }
+  }, [reloadCollection]);
 
   const trainStat = useCallback((petId: string, stat: StatKey) => {
     if (isSupabaseConfigured) {
@@ -870,19 +895,6 @@ export const usePet = (userId: string | null) => {
     if (!error && data != null) {
       setCol((c) => ({ ...c, wallet: { ...c.wallet, tokens: Number(data) } }));
     }
-  }, []);
-
-  // Re-read the collection from the cloud, replacing local state. Used after a
-  // marketplace transfer so an adopted pet appears (and a sold one disappears)
-  // without the next sync clobbering the change. No-op in local-only mode.
-  const reloadCollection = useCallback(async () => {
-    if (!isSupabaseConfigured || !userRef.current) return;
-    const fresh = await loadCloudCollection();
-    setCol({
-      pets: fresh.pets.map((p) => applyDecay(p, Date.now())),
-      activeId: fresh.activeId,
-      wallet: fresh.wallet,
-    });
   }, []);
 
   const renamePet = useCallback((id: string, name: string) => {

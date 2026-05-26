@@ -582,3 +582,111 @@ grant execute on function public.import_pets(jsonb) to authenticated;
 revoke update on public.profiles from anon, authenticated;
 grant  update (active_pet_id) on public.profiles to authenticated;
 revoke insert on public.pets from anon, authenticated;
+
+-- ── Server-authoritative pet stats (anti-cheat, step 2) ───────────────────────
+-- Step 1 locked the wallet; this step stops pets being forged. Hatching now
+-- rolls the species, rarity, and base stats SERVER-SIDE (the client only sends
+-- the chosen name, so easter-egg names still work), and direct client UPDATEs
+-- to the stat/rarity/level/ascended columns are revoked — those change only via
+-- hatch_pet / train_pet / ascend_pet / adopt_pet. The species pools, rarity
+-- weights, and stat formula MUST stay in sync with src/state/usePet.ts.
+--
+-- Still client-influenced (a later step): age/stage progression is time-based
+-- and trusted from the client, so growth can be fast-forwarded — but stats,
+-- rarity, level (beyond the stage cap), and tokens can no longer be forged.
+
+-- Replace the step-1 hatch (which trusted a client-built pet) with one that
+-- generates everything server-side. Returns { pet, tokens }.
+drop function if exists public.hatch_pet(jsonb);
+
+create or replace function public.hatch_pet(p_name text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me      uuid := auth.uid();
+  cost    integer := 150;        -- EGG_COST
+  bal     integer;
+  owned   integer;
+  nm      text := coalesce(nullif(btrim(p_name), ''), 'Pixel');
+  key     text := lower(btrim(coalesce(p_name, '')));
+  r       double precision;
+  rarity  text;
+  pool    text[];
+  species text;
+  mult    double precision;
+  pid     text := 'p_' || replace(gen_random_uuid()::text, '-', '');
+  now_ms  bigint := (extract(epoch from now()) * 1000)::bigint;
+  st      jsonb;
+  pet_row public.pets%rowtype;
+begin
+  select count(*) into owned from public.pets where owner = me;
+  if owned >= 8 then raise exception 'Your collection is full'; end if;
+  select tokens into bal from public.profiles where id = me for update;
+  if bal < cost then raise exception 'Not enough tokens'; end if;
+
+  -- Easter-egg names force a species; otherwise roll rarity by weight
+  -- (common 60 / uncommon 25 / rare 10 / epic 4 / legendary 1, total 100).
+  if key = 'spyro' then
+    rarity := 'legendary'; species := '🐉';
+  elsif key = 'moonbeam' then
+    rarity := 'legendary'; species := '🦄';
+  else
+    r := random() * 100;
+    if    r < 60 then rarity := 'common';    pool := array['🐕','🐈','🐇','🐢'];
+    elsif r < 85 then rarity := 'uncommon';  pool := array['🦊','🐍','🦎','🦇','🦔','🐧'];
+    elsif r < 95 then rarity := 'rare';      pool := array['🦌','🦥','🦉','🦅','🦘','🦫','🦒'];
+    elsif r < 99 then rarity := 'epic';      pool := array['🐅','🐘','🦏','🐊','🦈','🐙'];
+    else              rarity := 'legendary'; pool := array['🐉','🦄','🧜','🦖'];
+    end if;
+    species := pool[1 + floor(random() * array_length(pool, 1))::int];
+  end if;
+
+  mult := case rarity
+    when 'common' then 1.0 when 'uncommon' then 1.2 when 'rare' then 1.45
+    when 'epic' then 1.75 when 'legendary' then 2.2 else 1.0 end;
+  st := jsonb_build_object(
+    'attack',  round((10 + random() * 8)  * mult),
+    'defense', round((10 + random() * 8)  * mult),
+    'speed',   round((10 + random() * 8)  * mult),
+    'maxHp',   round((40 + random() * 30) * mult)
+  );
+
+  insert into public.pets (
+    id, owner, name, species, rarity, stats, level, stage,
+    hunger, happiness, cleanliness, energy, health, age,
+    born_at, last_tick, asleep, poops, sick, ascended
+  ) values (
+    pid, me, nm, species, rarity, st, 1, 'egg',
+    70, 70, 90, 80, 100, 0, now_ms, now_ms, false, 0, false, false
+  ) returning * into pet_row;
+
+  update public.profiles set tokens = tokens - cost, active_pet_id = pid where id = me;
+  return jsonb_build_object('pet', to_jsonb(pet_row), 'tokens', bal - cost);
+end; $$;
+grant execute on function public.hatch_pet(text) to authenticated;
+
+-- Ascend a dragon/unicorn at adulthood (one-way). ascended is otherwise locked.
+create or replace function public.ascend_pet(p_pet_id text)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  me  uuid := auth.uid();
+  pet public.pets%rowtype;
+begin
+  select * into pet from public.pets where id = p_pet_id and owner = me;
+  if pet.id is null then raise exception 'That pet is not yours'; end if;
+  if pet.species not in ('🐉', '🦄') then raise exception 'This species cannot ascend'; end if;
+  if pet.stage <> 'adult' then raise exception 'Only adults can ascend'; end if;
+  if coalesce(pet.ascended, false) then raise exception 'Already ascended'; end if;
+  update public.pets set ascended = true where id = p_pet_id;
+end; $$;
+grant execute on function public.ascend_pet(text) to authenticated;
+
+-- Lock the stat/identity columns: clients may only write care state + name now.
+-- stats/level/rarity/species/ascended change solely via the RPCs above and
+-- adopt_pet. (age/stage stay writable so time-based growth still persists.)
+revoke update on public.pets from anon, authenticated;
+grant update (
+  name, hunger, happiness, cleanliness, energy, health, age, stage,
+  last_tick, asleep, poops, sick
+) on public.pets to authenticated;
