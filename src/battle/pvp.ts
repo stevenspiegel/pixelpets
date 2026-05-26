@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Combatant } from './engine';
 import { playerCombatant } from './opponent';
 import { speciesName } from '../state/usePet';
+import { Tactic } from './tactics';
 
 // Build a battle Combatant from a random opponent row returned by the
 // get_random_opponent RPC, reusing the same effective-stat scaling as the
@@ -54,58 +55,91 @@ export const recordPvpResult = async (won: boolean): Promise<void> => {
   if (error) console.warn('[pixelpets] record pvp result error:', error.message);
 };
 
-// ── Server-resolved battles (step 3) ──────────────────────────────────────────
-export type BattleEnemy = {
+// ── Turn-based server-resolved battles ────────────────────────────────────────
+// The server owns all battle state: start_battle creates a hidden battle row
+// with both sides' authoritative stats, and each battle_turn applies one round
+// of stat-scaled, tactic-modified damage. Wins, rewards, and PvP records are
+// only ever written by the server, so nothing here can be forged by the client.
+
+// A combatant as the server reports it (display + current HP).
+export type BattleCombatant = {
   name: string;
-  adjective: string;
   species: string;
-  rarity: Rarity;
   stage: LifeStage;
+  rarity: Rarity;
   ascended: boolean;
   level: number;
   attack: number;
   defense: number;
   speed: number;
   maxHp: number;
+  hp: number;
 };
 
-export type BattleOutcome =
+export type BattleStart =
   | { empty: true }
-  | { won: boolean; reward: number; tokens: number; enemy: BattleEnemy };
+  | {
+      battleId: string;
+      turn: number;
+      status: 'active';
+      player: BattleCombatant;
+      enemy: BattleCombatant;
+    };
 
-// Ask the server to resolve a battle. It decides the outcome from authoritative
-// stats, credits the reward, and records the PvP result; we just animate it.
-export const resolveBattle = async (
+export type TurnResult = {
+  status: 'active' | 'won' | 'lost';
+  turn: number;
+  tactic: Tactic;
+  enemyTactic: Tactic;
+  order: 'player' | 'enemy'; // who struck first this turn (by speed)
+  playerHp: number;
+  enemyHp: number;
+  playerDmg: number; // damage the player dealt this turn (0 if KO'd first)
+  enemyDmg: number; // damage the enemy dealt this turn
+  reward: number; // tokens awarded (only when status === 'won')
+  tokens: number; // caller's new balance (only when battle ended)
+};
+
+// Begin a battle: the server builds the opponent and stores the fight.
+export const startBattle = async (
   mode: 'pve' | 'pvp',
   petId: string
-): Promise<BattleOutcome | null> => {
+): Promise<BattleStart | null> => {
   if (!supabase) return null;
-  const { data, error } = await supabase.rpc('resolve_battle', {
+  const { data, error } = await supabase.rpc('start_battle', {
     p_mode: mode,
     p_pet_id: petId,
   });
   if (error) {
-    console.warn('[pixelpets] resolve battle error:', error.message);
+    console.warn('[pixelpets] start battle error:', error.message);
     return null;
   }
-  return data as BattleOutcome;
+  const res = data as BattleStart;
+  // PvE enemy names arrive packed as "Adjective|species"; turn the species
+  // emoji into its display name client-side (speciesName lives here).
+  if (res && !('empty' in res) && res.enemy.name.includes('|')) {
+    const [adj, sp] = res.enemy.name.split('|');
+    res.enemy.name = `${adj} ${speciesName(sp)}`;
+  }
+  return res;
 };
 
-// Build a display Combatant from a server BattleEnemy.
-export const enemyCombatant = (e: BattleEnemy): Combatant => ({
-  name: e.name || `${e.adjective} ${speciesName(e.species)}`,
-  species: e.species,
-  stage: e.stage,
-  rarity: e.rarity,
-  ascended: e.ascended,
-  level: e.level,
-  attack: e.attack,
-  defense: e.defense,
-  speed: e.speed,
-  maxHp: e.maxHp,
-  hp: e.maxHp,
-  guarding: false,
-});
+// Play one turn with the chosen tactic; the server resolves the round.
+export const battleTurn = async (
+  battleId: string,
+  tactic: Tactic
+): Promise<TurnResult | null> => {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc('battle_turn', {
+    p_battle_id: battleId,
+    p_tactic: tactic,
+  });
+  if (error) {
+    console.warn('[pixelpets] battle turn error:', error.message);
+    return null;
+  }
+  return data as TurnResult;
+};
 
 export type LeaderRow = { username: string; wins: number; losses: number };
 
