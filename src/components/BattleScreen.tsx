@@ -282,9 +282,16 @@ const ServerBattle: React.FC<Props> = ({
     );
     setPhase('animating');
 
-    // Animate a few exchanges toward the server's verdict.
-    const pFinal = res.won ? Math.round(p.maxHp * 0.45) : 0;
-    const eFinal = res.won ? 0 : Math.round(e.maxHp * 0.45);
+    // Animate a few exchanges toward the server's verdict. The loser drops to
+    // 0; the winner's remaining HP reflects the power gap, so trouncing a much
+    // weaker pet barely scratches you while an even fight leaves you battered.
+    const power = (c: Combatant) => c.attack + c.defense + c.speed + c.maxHp / 4;
+    const ppow = power(p);
+    const epow = power(e);
+    const damageFrac = (taker: number, dealer: number) =>
+      Math.min(0.9, Math.max(0.1, (dealer / taker) * 0.7));
+    const pFinal = res.won ? Math.round(p.maxHp * (1 - damageFrac(ppow, epow))) : 0;
+    const eFinal = res.won ? 0 : Math.round(e.maxHp * (1 - damageFrac(epow, ppow)));
     const steps = 3;
     for (let i = 1; i <= steps; i++) {
       timers.current.push(
