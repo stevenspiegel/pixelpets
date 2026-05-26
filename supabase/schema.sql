@@ -819,10 +819,13 @@ grant execute on function public.start_battle(text, text) to authenticated;
 -- Resolve one turn. The player commits a tactic; the enemy's is rolled blindly.
 -- Damage scales with attacker.attack vs defender.defense (atk²/(atk+def)), then
 -- two strategic layers (mirrored in src/battle/tactics.ts):
---   • inherent stance — aggressive deals & takes +30%, defensive −30% on both;
---   • RPS matchup — winning aggressive▶balanced▶defensive▶aggressive ×1.5 / ×0.75.
--- The faster side strikes first; a knockout prevents the slower side from
--- retaliating that turn.
+--   • inherent stance — aggressive deals +25% / takes +40% (a real gamble);
+--     defensive deals -20% / takes -10%; balanced is neutral.
+--   • RPS matchup — winning aggressive▶balanced▶defensive▶aggressive ×1.35,
+--     losing ×0.8.
+-- These multipliers are tuned (see balance sim) so no stance dominates. The
+-- faster side strikes first (speed ties broken randomly so PvP isn't initiator-
+-- biased); a knockout prevents the slower side from retaliating that turn.
 create or replace function public.battle_turn(p_battle_id uuid, p_tactic text)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -852,14 +855,14 @@ begin
      or (ptac = 'defensive' and etac = 'aggressive') then mu := 'advantage';
   else mu := 'disadvantage'; end if;
 
-  pmult := case mu when 'advantage' then 1.5 when 'disadvantage' then 0.75 else 1.0 end;
-  emult := case mu when 'advantage' then 0.75 when 'disadvantage' then 1.5 else 1.0 end;
+  pmult := case mu when 'advantage' then 1.35 when 'disadvantage' then 0.8 else 1.0 end;
+  emult := case mu when 'advantage' then 0.8 when 'disadvantage' then 1.35 else 1.0 end;
 
   -- Inherent stance multipliers (deal / take), applied to whoever chose them.
-  p_out := case ptac when 'aggressive' then 1.3 when 'defensive' then 0.7 else 1.0 end;
-  p_in  := p_out;
-  e_out := case etac when 'aggressive' then 1.3 when 'defensive' then 0.7 else 1.0 end;
-  e_in  := e_out;
+  p_out := case ptac when 'aggressive' then 1.25 when 'defensive' then 0.8  else 1.0 end;
+  p_in  := case ptac when 'aggressive' then 1.4  when 'defensive' then 0.9  else 1.0 end;
+  e_out := case etac when 'aggressive' then 1.25 when 'defensive' then 0.8  else 1.0 end;
+  e_in  := case etac when 'aggressive' then 1.4  when 'defensive' then 0.9  else 1.0 end;
 
   -- Player's damage: own attack stance × foe's defend stance × matchup.
   pdmg := greatest(1, round(
@@ -870,7 +873,8 @@ begin
     * (0.9 + random() * 0.2)));
 
   php := b.p_hp; ehp := b.e_hp;
-  player_first := b.p_spd >= b.e_spd;
+  player_first := b.p_spd > b.e_spd
+               or (b.p_spd = b.e_spd and random() < 0.5);
 
   if player_first then
     ehp := ehp - pdmg; p_applied := pdmg;
