@@ -16,7 +16,7 @@ import { ActionButton } from './ActionButton';
 import { RarityBadge } from './RarityBadge';
 import { PetSwitcher } from './PetSwitcher';
 import { BattleStats } from './BattleStats';
-import { MAX_PETS, speciesName, canAscend, effectiveRarity } from '../state/usePet';
+import { MAX_PETS, speciesName, canAscend, effectiveRarity, EGG_COST } from '../state/usePet';
 
 type Props = {
   pet: PetState;
@@ -134,6 +134,7 @@ export const GameScreen: React.FC<Props> = ({
           onSwitch={onSwitchPet}
           onAddNew={onAddNew}
           maxPets={MAX_PETS}
+          eggCost={EGG_COST}
         />
       </View>
       <View style={styles.header}>

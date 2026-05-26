@@ -10,7 +10,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Alert } from 'react-native';
 import { useAuth } from './src/state/useAuth';
-import { usePet } from './src/state/usePet';
+import { usePet, EGG_COST } from './src/state/usePet';
 import { isSupabaseConfigured } from './src/lib/supabase';
 import { LoginScreen } from './src/components/LoginScreen';
 import { HatchScreen } from './src/components/HatchScreen';
@@ -110,6 +110,8 @@ export default function App() {
         username={username}
         onHatch={handleHatch}
         onLogOut={logOut}
+        tokens={tokens}
+        cost={EGG_COST}
         onCancel={pets.length > 0 ? () => setAddingNew(false) : undefined}
         onRestore={pets.length === 0 ? onRestore : undefined}
       />
@@ -153,7 +155,13 @@ export default function App() {
     // Edge case: pets exist but no active selected — shouldn't happen because
     // loadCollection always picks one, but fall back to the hatch screen.
     screen = (
-      <HatchScreen username={username} onHatch={handleHatch} onLogOut={logOut} />
+      <HatchScreen
+        username={username}
+        onHatch={handleHatch}
+        onLogOut={logOut}
+        tokens={tokens}
+        cost={EGG_COST}
+      />
     );
   }
 
