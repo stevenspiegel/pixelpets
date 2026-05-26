@@ -691,15 +691,45 @@ grant update (
   last_tick, asleep, poops, sick
 ) on public.pets to authenticated;
 
--- ── Server-authoritative battles (anti-cheat, step 3) ─────────────────────────
--- The client used to simulate the fight and merely claim a win, so wins (and the
--- token reward + PvP record) were forgeable. resolve_battle now decides the
--- outcome SERVER-SIDE from authoritative stats: it builds/loads the opponent,
--- compares effective power with a clamped upset chance, credits the reward, and
--- records the PvP result — all atomically. The client only animates the result.
--- Effective-stat math mirrors battleStats() and the PvE scaling mirrors
--- generateOpponent() in the client; keep them in sync.
-create or replace function public.resolve_battle(p_mode text, p_pet_id text)
+-- ── Server-authoritative turn-based battles (anti-cheat) ──────────────────────
+-- Battles are resolved one turn at a time, entirely server-side. start_battle
+-- creates a hidden battle row holding both sides' authoritative effective stats
+-- and full HP; each battle_turn applies one round of stat-scaled, tactic-
+-- modified damage and persists the new HP. Wins, token rewards, and PvP records
+-- are only ever written here, so the client cannot forge an outcome. Effective-
+-- stat math mirrors battleStats() and the PvE scaling mirrors generateOpponent()
+-- in the client; the tactic RPS triangle mirrors src/battle/tactics.ts.
+drop function if exists public.resolve_battle(text, text);
+drop function if exists public.resolve_battle(text, text, text);
+
+create table if not exists public.battles (
+  id         uuid primary key default gen_random_uuid(),
+  owner      uuid not null references public.profiles (id) on delete cascade,
+  pet_id     text not null,
+  mode       text not null,
+  turn       integer not null default 1,
+  p_name text not null, p_species text not null, p_stage text not null,
+  p_rarity text not null, p_ascended boolean not null, p_level int not null,
+  p_atk int not null, p_def int not null, p_spd int not null,
+  p_maxhp int not null, p_hp int not null,
+  e_name text not null, e_species text not null, e_stage text not null,
+  e_rarity text not null, e_ascended boolean not null, e_level int not null,
+  e_atk int not null, e_def int not null, e_spd int not null,
+  e_maxhp int not null, e_hp int not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists battles_owner_idx on public.battles (owner);
+
+-- The client may read its own in-progress battles, but only the RPCs below
+-- (SECURITY DEFINER) ever write — so HP and outcomes can't be tampered with.
+alter table public.battles enable row level security;
+grant select on public.battles to authenticated;
+drop policy if exists "battles: own read" on public.battles;
+create policy "battles: own read" on public.battles for select using (auth.uid() = owner);
+
+-- Begin a battle. Builds the opponent (PvE scaled to the player, or a random
+-- PvP pet), stores the fight at full HP, and returns the opening state.
+create or replace function public.start_battle(p_mode text, p_pet_id text)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -708,13 +738,12 @@ declare
   opp  public.pets%rowtype;
   opp_user text;
   plvl int; pgrow double precision; pasc double precision;
-  patk int; pdef int; pspd int; php int;
+  patk int; pdef int; pspd int; phpv int;
   elvl int; egrow double precision; easc double precision;
-  eatk int; edef int; espd int; ehp int;
-  e_species text; e_rarity text; e_name text := ''; e_adj text := '';
-  e_stage text := 'adult'; e_ascb boolean := false;
-  ppow double precision; epow double precision; prob double precision;
-  won boolean; reward int := 0; bal int;
+  eatk int; edef int; espd int; ehpv int;
+  e_species text; e_rarity text; e_name text; e_stage text := 'adult';
+  e_ascb boolean := false;
+  bid uuid;
   adjs text[] := array['Wild','Feral','Rival','Rogue','Fierce','Ancient'];
   opps text[] := array['🦊','🐅','🦈','🐉','🦉','🐍','🦫','🦒','🐊','🦝','🦏','🐘'];
 begin
@@ -728,7 +757,7 @@ begin
   patk := round((pet.stats->>'attack')::numeric  * pgrow * pasc);
   pdef := round((pet.stats->>'defense')::numeric * pgrow * pasc);
   pspd := round((pet.stats->>'speed')::numeric   * pgrow * pasc);
-  php  := round((pet.stats->>'maxHp')::numeric    * pgrow * pasc);
+  phpv := greatest(1, round((pet.stats->>'maxHp')::numeric * pgrow * pasc));
 
   if p_mode = 'pvp' then
     select * into opp from public.pets
@@ -742,47 +771,154 @@ begin
     eatk := round((opp.stats->>'attack')::numeric  * egrow * easc);
     edef := round((opp.stats->>'defense')::numeric * egrow * easc);
     espd := round((opp.stats->>'speed')::numeric   * egrow * easc);
-    ehp  := round((opp.stats->>'maxHp')::numeric    * egrow * easc);
+    ehpv := greatest(1, round((opp.stats->>'maxHp')::numeric * egrow * easc));
     e_species := opp.species; e_rarity := opp.rarity; e_stage := opp.stage;
     e_ascb := coalesce(opp.ascended, false);
     e_name := opp.name || ' (@' || coalesce(opp_user, 'rival') || ')';
   else
-    -- PvE: scale to the player with jitter, mirroring generateOpponent().
     eatk := greatest(1,  round(patk * (0.8  + random() * 0.35)));
     edef := greatest(1,  round(pdef * (0.8  + random() * 0.35)));
     espd := greatest(1,  round(pspd * (0.8  + random() * 0.35)));
-    ehp  := greatest(10, round(php  * (0.85 + random() * 0.3)));
+    ehpv := greatest(10, round(phpv * (0.85 + random() * 0.3)));
     elvl := plvl;
     e_species := opps[1 + floor(random() * array_length(opps, 1))::int];
     e_rarity := 'common';
-    e_adj := adjs[1 + floor(random() * array_length(adjs, 1))::int];
+    e_name := (adjs[1 + floor(random() * array_length(adjs, 1))::int]) || '|' || e_species;
   end if;
 
-  ppow := patk + pdef + pspd + php / 4.0;
-  epow := eatk + edef + espd + ehp / 4.0;
-  prob := least(0.9, greatest(0.1, ppow / (ppow + epow)));
-  won := random() < prob;
-
-  if won then
-    reward := 5 + (elvl / 5);                                   -- battleReward()
-    update public.profiles set tokens = tokens + reward where id = me;
-  end if;
-  select tokens into bal from public.profiles where id = me;
-
-  if p_mode = 'pvp' then
-    update public.profiles
-      set pvp_wins   = pvp_wins   + (case when won then 1 else 0 end),
-          pvp_losses = pvp_losses + (case when won then 0 else 1 end)
-      where id = me;
-  end if;
+  -- One active battle per player; clear any leftovers first.
+  delete from public.battles where owner = me;
+  insert into public.battles (
+    owner, pet_id, mode, turn,
+    p_name, p_species, p_stage, p_rarity, p_ascended, p_level,
+    p_atk, p_def, p_spd, p_maxhp, p_hp,
+    e_name, e_species, e_stage, e_rarity, e_ascended, e_level,
+    e_atk, e_def, e_spd, e_maxhp, e_hp
+  ) values (
+    me, pet.id, p_mode, 1,
+    pet.name, pet.species, pet.stage, pet.rarity, coalesce(pet.ascended, false), plvl,
+    patk, pdef, pspd, phpv, phpv,
+    e_name, e_species, e_stage, e_rarity, e_ascb, elvl,
+    eatk, edef, espd, ehpv, ehpv
+  ) returning id into bid;
 
   return jsonb_build_object(
-    'won', won, 'reward', reward, 'tokens', bal,
+    'battleId', bid, 'turn', 1, 'status', 'active',
+    'player', jsonb_build_object(
+      'name', pet.name, 'species', pet.species, 'stage', pet.stage,
+      'rarity', pet.rarity, 'ascended', coalesce(pet.ascended, false), 'level', plvl,
+      'attack', patk, 'defense', pdef, 'speed', pspd, 'maxHp', phpv, 'hp', phpv),
     'enemy', jsonb_build_object(
-      'name', e_name, 'adjective', e_adj, 'species', e_species,
-      'rarity', e_rarity, 'stage', e_stage, 'ascended', e_ascb, 'level', elvl,
-      'attack', eatk, 'defense', edef, 'speed', espd, 'maxHp', ehp
-    )
+      'name', e_name, 'species', e_species, 'stage', e_stage,
+      'rarity', e_rarity, 'ascended', e_ascb, 'level', elvl,
+      'attack', eatk, 'defense', edef, 'speed', espd, 'maxHp', ehpv, 'hp', ehpv)
   );
 end; $$;
-grant execute on function public.resolve_battle(text, text) to authenticated;
+grant execute on function public.start_battle(text, text) to authenticated;
+
+-- Resolve one turn. The player commits a tactic; the enemy's is rolled blindly.
+-- Damage scales with attacker.attack vs defender.defense (atk²/(atk+def)), then
+-- two strategic layers (mirrored in src/battle/tactics.ts):
+--   • inherent stance — aggressive deals & takes +30%, defensive −30% on both;
+--   • RPS matchup — winning aggressive▶balanced▶defensive▶aggressive ×1.5 / ×0.75.
+-- The faster side strikes first; a knockout prevents the slower side from
+-- retaliating that turn.
+create or replace function public.battle_turn(p_battle_id uuid, p_tactic text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me  uuid := auth.uid();
+  b   public.battles%rowtype;
+  ptac text; etac text; mu text;
+  pmult double precision; emult double precision;
+  p_out double precision; p_in double precision;
+  e_out double precision; e_in double precision;
+  pdmg int; edmg int; p_applied int := 0; e_applied int := 0;
+  php int; ehp int; player_first boolean; result text;
+  reward int := 0; bal int;
+begin
+  select * into b from public.battles
+    where id = p_battle_id and owner = me for update;
+  if b.id is null then raise exception 'No active battle'; end if;
+
+  ptac := case when p_tactic in ('aggressive', 'balanced', 'defensive')
+               then p_tactic else 'balanced' end;
+  etac := (array['aggressive', 'balanced', 'defensive'])[1 + floor(random() * 3)::int];
+
+  -- RPS triangle from the player's perspective.
+  if ptac = etac then mu := 'even';
+  elsif (ptac = 'aggressive' and etac = 'balanced')
+     or (ptac = 'balanced' and etac = 'defensive')
+     or (ptac = 'defensive' and etac = 'aggressive') then mu := 'advantage';
+  else mu := 'disadvantage'; end if;
+
+  pmult := case mu when 'advantage' then 1.5 when 'disadvantage' then 0.75 else 1.0 end;
+  emult := case mu when 'advantage' then 0.75 when 'disadvantage' then 1.5 else 1.0 end;
+
+  -- Inherent stance multipliers (deal / take), applied to whoever chose them.
+  p_out := case ptac when 'aggressive' then 1.3 when 'defensive' then 0.7 else 1.0 end;
+  p_in  := p_out;
+  e_out := case etac when 'aggressive' then 1.3 when 'defensive' then 0.7 else 1.0 end;
+  e_in  := e_out;
+
+  -- Player's damage: own attack stance × foe's defend stance × matchup.
+  pdmg := greatest(1, round(
+    (b.p_atk::numeric * b.p_atk / (b.p_atk + b.e_def)) * 1.8 * pmult * p_out * e_in
+    * (0.9 + random() * 0.2)));
+  edmg := greatest(1, round(
+    (b.e_atk::numeric * b.e_atk / (b.e_atk + b.p_def)) * 1.8 * emult * e_out * p_in
+    * (0.9 + random() * 0.2)));
+
+  php := b.p_hp; ehp := b.e_hp;
+  player_first := b.p_spd >= b.e_spd;
+
+  if player_first then
+    ehp := ehp - pdmg; p_applied := pdmg;
+    if ehp <= 0 then ehp := 0; result := 'won';
+    else
+      php := php - edmg; e_applied := edmg;
+      result := case when php <= 0 then 'lost' else 'active' end;
+      if php < 0 then php := 0; end if;
+    end if;
+  else
+    php := php - edmg; e_applied := edmg;
+    if php <= 0 then php := 0; result := 'lost';
+    else
+      ehp := ehp - pdmg; p_applied := pdmg;
+      result := case when ehp <= 0 then 'won' else 'active' end;
+      if ehp < 0 then ehp := 0; end if;
+    end if;
+  end if;
+
+  if result = 'active' then
+    update public.battles
+      set p_hp = php, e_hp = ehp, turn = turn + 1
+      where id = b.id;
+  else
+    -- Battle over: settle rewards / PvP record, then discard the row.
+    if result = 'won' then
+      reward := 5 + (b.e_level / 5);                              -- battleReward()
+      update public.profiles set tokens = tokens + reward where id = me;
+    end if;
+    if b.mode = 'pvp' then
+      update public.profiles
+        set pvp_wins   = pvp_wins   + (case when result = 'won' then 1 else 0 end),
+            pvp_losses = pvp_losses + (case when result = 'won' then 0 else 1 end)
+        where id = me;
+    end if;
+    delete from public.battles where id = b.id;
+  end if;
+
+  select tokens into bal from public.profiles where id = me;
+
+  return jsonb_build_object(
+    'status', result,
+    'turn', case when result = 'active' then b.turn + 1 else b.turn end,
+    'tactic', ptac, 'enemyTactic', etac,
+    'order', case when player_first then 'player' else 'enemy' end,
+    'playerHp', php, 'enemyHp', ehp,
+    'playerDmg', p_applied, 'enemyDmg', e_applied,
+    'reward', reward, 'tokens', bal
+  );
+end; $$;
+grant execute on function public.battle_turn(uuid, text) to authenticated;

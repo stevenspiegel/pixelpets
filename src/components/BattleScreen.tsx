@@ -12,10 +12,11 @@ import {
 import { generateOpponent, playerCombatant, battleReward } from '../battle/opponent';
 import {
   fetchPvpOpponent,
-  resolveBattle,
-  enemyCombatant,
-  BattleOutcome,
+  startBattle as startServerBattle,
+  battleTurn,
+  BattleCombatant,
 } from '../battle/pvp';
+import { Tactic, TACTICS, TACTIC_ORDER, tacticMatchup } from '../battle/tactics';
 import { CreatureSprite } from './CreatureSprite';
 
 type Props = {
@@ -233,7 +234,23 @@ const LocalBattle: React.FC<Props> = ({
   );
 };
 
-// Cloud: the server decides the outcome; we play a short animation toward it.
+// Cloud: turn-based battle. The server owns all state — each tactic press is a
+// round resolved server-side; we just render the HP it reports back.
+const hpView = (c: BattleCombatant, hp: number) => ({
+  name: c.name,
+  species: c.species,
+  stage: c.stage,
+  rarity: c.rarity,
+  ascended: c.ascended,
+  level: c.level,
+  attack: c.attack,
+  defense: c.defense,
+  speed: c.speed,
+  maxHp: c.maxHp,
+  hp,
+  guarding: false,
+});
+
 const ServerBattle: React.FC<Props> = ({
   pet,
   mode = 'pve',
@@ -241,86 +258,79 @@ const ServerBattle: React.FC<Props> = ({
   onExit,
 }) => {
   const isPvp = mode === 'pvp';
-  const [phase, setPhase] = useState<'loading' | 'animating' | 'done' | 'empty'>(
+  const [phase, setPhase] = useState<'loading' | 'playing' | 'done' | 'empty'>(
     'loading'
   );
-  const [enemy, setEnemy] = useState<Combatant | null>(null);
-  const [player, setPlayer] = useState<Combatant | null>(null);
+  const [battleId, setBattleId] = useState<string | null>(null);
+  const [enemy, setEnemy] = useState<BattleCombatant | null>(null);
+  const [player, setPlayer] = useState<BattleCombatant | null>(null);
   const [pHp, setPHp] = useState(0);
   const [eHp, setEHp] = useState(0);
+  const [turn, setTurn] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [logLine, setLogLine] = useState('');
   const [outcome, setOutcome] = useState<{ won: boolean; reward: number } | null>(
     null
   );
-  const [logLine, setLogLine] = useState('');
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  const clearTimers = useCallback(() => {
-    timers.current.forEach(clearTimeout);
-    timers.current = [];
-  }, []);
-
-  const startBattle = useCallback(async () => {
-    clearTimers();
+  const begin = useCallback(async () => {
     setPhase('loading');
     setEnemy(null);
+    setPlayer(null);
     setOutcome(null);
     setLogLine('');
-    const res: BattleOutcome | null = await resolveBattle(mode, pet.id);
+    setBusy(false);
+    const res = await startServerBattle(mode, pet.id);
     if (!res || 'empty' in res) {
       setPhase('empty');
       return;
     }
-    const e = enemyCombatant(res.enemy);
-    const p = playerCombatant(pet);
-    setEnemy(e);
-    setPlayer(p);
-    setPHp(p.maxHp);
-    setEHp(e.maxHp);
-    setOutcome({ won: res.won, reward: res.reward });
+    setBattleId(res.battleId);
+    setPlayer(res.player);
+    setEnemy(res.enemy);
+    setPHp(res.player.hp);
+    setEHp(res.enemy.hp);
+    setTurn(res.turn);
     setLogLine(
-      isPvp ? `${e.name} accepts your challenge!` : 'A wild challenger appears!'
+      isPvp ? `${res.enemy.name} accepts your challenge!` : 'A wild challenger appears!'
     );
-    setPhase('animating');
-
-    // Animate a few exchanges toward the server's verdict. The loser drops to
-    // 0; the winner's remaining HP reflects the power gap, so trouncing a much
-    // weaker pet barely scratches you while an even fight leaves you battered.
-    const power = (c: Combatant) => c.attack + c.defense + c.speed + c.maxHp / 4;
-    const ppow = power(p);
-    const epow = power(e);
-    const damageFrac = (taker: number, dealer: number) =>
-      Math.min(0.9, Math.max(0.1, (dealer / taker) * 0.7));
-    const pFinal = res.won ? Math.round(p.maxHp * (1 - damageFrac(ppow, epow))) : 0;
-    const eFinal = res.won ? 0 : Math.round(e.maxHp * (1 - damageFrac(epow, ppow)));
-    const steps = 3;
-    for (let i = 1; i <= steps; i++) {
-      timers.current.push(
-        setTimeout(() => {
-          setPHp(Math.round(p.maxHp - (p.maxHp - pFinal) * (i / steps)));
-          setEHp(Math.round(e.maxHp - (e.maxHp - eFinal) * (i / steps)));
-          setLogLine(
-            i < steps
-              ? 'The battle rages…'
-              : res.won
-                ? 'Victory!'
-                : 'Your pet was defeated…'
-          );
-        }, i * 450)
-      );
-    }
-    timers.current.push(
-      setTimeout(() => {
-        setPhase('done');
-        onWalletChange?.(res.tokens);
-      }, steps * 450 + 200)
-    );
-  }, [mode, pet, isPvp, onWalletChange, clearTimers]);
+    setPhase('playing');
+  }, [mode, pet.id, isPvp]);
 
   useEffect(() => {
-    startBattle();
-    return clearTimers;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    begin();
+  }, [begin]);
+
+  const playTurn = useCallback(
+    async (tactic: Tactic) => {
+      if (busy || phase !== 'playing' || !battleId) return;
+      setBusy(true);
+      const res = await battleTurn(battleId, tactic);
+      if (!res) {
+        setLogLine('Connection hiccup — try that move again.');
+        setBusy(false);
+        return;
+      }
+      const mu = tacticMatchup(res.tactic, res.enemyTactic);
+      const edge =
+        mu === 'advantage' ? ' (your edge)' : mu === 'disadvantage' ? ' (foe’s edge)' : '';
+      setLogLine(
+        `${TACTICS[res.tactic].icon} you vs ${TACTICS[res.enemyTactic].icon} foe${edge} — ` +
+          `you hit ${res.playerDmg}, took ${res.enemyDmg}`
+      );
+      setPHp(res.playerHp);
+      setEHp(res.enemyHp);
+      if (res.status === 'active') {
+        setTurn(res.turn);
+        setBusy(false);
+      } else {
+        setOutcome({ won: res.status === 'won', reward: res.reward });
+        setPhase('done');
+        onWalletChange?.(res.tokens);
+      }
+    },
+    [busy, phase, battleId, onWalletChange]
+  );
 
   const title = isPvp ? '⚔️ PvP' : '⚔️ BATTLE';
 
@@ -363,7 +373,7 @@ const ServerBattle: React.FC<Props> = ({
       </View>
 
       <View style={styles.arena}>
-        <HpBar c={{ ...enemy, hp: eHp }} />
+        <HpBar c={hpView(enemy, eHp)} />
         <View style={styles.enemySprite}>
           <CreatureSprite
             species={enemy.species}
@@ -383,7 +393,7 @@ const ServerBattle: React.FC<Props> = ({
             size={130}
           />
         </View>
-        <HpBar c={{ ...player, hp: pHp }} />
+        <HpBar c={hpView(player, pHp)} />
       </View>
 
       <View style={styles.logBox}>
@@ -391,9 +401,29 @@ const ServerBattle: React.FC<Props> = ({
       </View>
 
       {!done ? (
-        <View style={styles.resultBox}>
-          <ActivityIndicator color="#fff" style={{ marginTop: 16 }} />
-        </View>
+        <>
+          <Text style={styles.turnLabel}>TURN {turn} — CHOOSE YOUR TACTIC</Text>
+          <View style={styles.moves}>
+            {TACTIC_ORDER.map((t) => (
+              <Pressable
+                key={t}
+                disabled={busy}
+                onPress={() => playTurn(t)}
+                style={({ pressed }) => [
+                  styles.moveBtn,
+                  pressed && styles.moveBtnPressed,
+                  busy && styles.moveBtnDisabled,
+                ]}
+              >
+                <Text style={styles.moveIcon}>{TACTICS[t].icon}</Text>
+                <Text style={styles.moveLabel}>{TACTICS[t].label.toUpperCase()}</Text>
+                <Text style={styles.moveSub}>{TACTICS[t].stance}</Text>
+                <Text style={styles.moveSub}>{TACTICS[t].hint}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {busy && <ActivityIndicator color="#fff" style={{ marginTop: 12 }} />}
+        </>
       ) : (
         <View style={styles.resultBox}>
           <Text
@@ -406,7 +436,7 @@ const ServerBattle: React.FC<Props> = ({
           )}
           <View style={styles.resultButtons}>
             <Pressable
-              onPress={startBattle}
+              onPress={begin}
               style={({ pressed }) => [styles.againBtn, pressed && styles.moveBtnPressed]}
             >
               <Text style={styles.againText}>
@@ -575,6 +605,9 @@ const styles = StyleSheet.create({
     transform: [{ translateY: 2 }],
     backgroundColor: '#5a30a0',
   },
+  moveBtnDisabled: {
+    opacity: 0.45,
+  },
   moveIcon: {
     fontSize: 24,
   },
@@ -585,6 +618,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     letterSpacing: 1,
     marginTop: 2,
+  },
+  moveSub: {
+    color: '#bfa8f0',
+    fontFamily: 'Courier',
+    fontSize: 9,
+    marginTop: 1,
+    textAlign: 'center',
+  },
+  turnLabel: {
+    color: '#d6c8ff',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+    marginTop: 16,
   },
   resultBox: {
     width: '100%',
