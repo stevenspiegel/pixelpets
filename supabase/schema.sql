@@ -278,3 +278,126 @@ language sql security definer set search_path = public as $$
   order by pt.created_at;
 $$;
 grant execute on function public.get_friend_pets(text) to authenticated;
+
+-- ── Marketplace: public, token-priced pet adoption ────────────────────────────
+-- Players list a pet for a token price; anyone can adopt it. Ownership transfer
+-- and token movement happen atomically inside adopt_pet (SECURITY DEFINER) so
+-- the economy can't be tampered with from the client. Run this block if you set
+-- up the project before the marketplace.
+
+create table if not exists public.adoption_listings (
+  pet_id     text primary key references public.pets (id) on delete cascade,
+  seller     uuid not null references public.profiles (id) on delete cascade,
+  price      integer not null check (price >= 0),
+  created_at timestamptz not null default now()
+);
+create index if not exists adoption_seller_idx on public.adoption_listings (seller);
+
+-- Locked down: all access goes through the SECURITY DEFINER RPCs below, which
+-- run as the table owner and bypass RLS. No direct table grants are given.
+alter table public.adoption_listings enable row level security;
+
+-- Cap mirrored from the client (MAX_PETS). Keep in sync if you change it there.
+create or replace function public.market_max_pets() returns integer
+language sql immutable as $$ select 8 $$;
+
+-- Put one of your own pets up for adoption (or update its price). Rejects your
+-- active pet, your last remaining pet, and eggs/dead pets.
+create or replace function public.list_pet_for_adoption(target_pet text, price integer)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  me  uuid := auth.uid();
+  pet public.pets%rowtype;
+  active text;
+  owned  integer;
+begin
+  if price < 0 then raise exception 'Price must be zero or more'; end if;
+  select * into pet from public.pets where id = target_pet;
+  if pet.id is null or pet.owner <> me then
+    raise exception 'That pet is not yours';
+  end if;
+  if pet.stage in ('egg', 'dead') then
+    raise exception 'That pet cannot be listed';
+  end if;
+  select active_pet_id into active from public.profiles where id = me;
+  if active = target_pet then
+    raise exception 'You cannot list your active pet — switch to another first';
+  end if;
+  select count(*) into owned from public.pets where owner = me;
+  if owned <= 1 then
+    raise exception 'You cannot give away your only pet';
+  end if;
+  insert into public.adoption_listings (pet_id, seller, price)
+  values (target_pet, me, price)
+  on conflict (pet_id) do update set price = excluded.price;
+end; $$;
+grant execute on function public.list_pet_for_adoption(text, integer) to authenticated;
+
+-- Remove your own listing.
+create or replace function public.cancel_listing(target_pet text)
+returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.adoption_listings
+  where pet_id = target_pet and seller = auth.uid();
+end; $$;
+grant execute on function public.cancel_listing(text) to authenticated;
+
+-- Browse every open listing with the display fields needed to render the pet.
+create or replace function public.list_adoptions()
+returns table (
+  pet_id text, seller_username text, price integer,
+  name text, species text, rarity text,
+  level integer, stage text, ascended boolean, stats jsonb
+)
+language sql security definer set search_path = public as $$
+  select l.pet_id, s.username, l.price,
+         p.name, p.species, p.rarity,
+         p.level, p.stage, coalesce(p.ascended, false), p.stats
+  from public.adoption_listings l
+  join public.pets p     on p.id = l.pet_id
+  join public.profiles s on s.id = l.seller
+  order by l.created_at desc;
+$$;
+grant execute on function public.list_adoptions() to authenticated;
+
+-- Adopt a listed pet: atomically verify the listing, move tokens from adopter
+-- to seller, reassign ownership, and remove the listing. Returns 'ok'.
+create or replace function public.adopt_pet(target_pet text)
+returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  me        uuid := auth.uid();
+  seller_id uuid;
+  cost      integer;
+  bal       integer;
+  owned     integer;
+begin
+  -- Lock the listing so two adopters can't race for the same pet.
+  select l.seller, l.price into seller_id, cost
+  from public.adoption_listings l where l.pet_id = target_pet for update;
+  if seller_id is null then
+    raise exception 'This pet is no longer available';
+  end if;
+  if seller_id = me then
+    raise exception 'You are already this pet''s owner';
+  end if;
+  select count(*) into owned from public.pets where owner = me;
+  if owned >= public.market_max_pets() then
+    raise exception 'Your collection is full';
+  end if;
+  select tokens into bal from public.profiles where id = me for update;
+  if bal < cost then
+    raise exception 'Not enough tokens';
+  end if;
+  update public.profiles set tokens = tokens - cost where id = me;
+  update public.profiles set tokens = tokens + cost where id = seller_id;
+  update public.pets set owner = me where id = target_pet;
+  -- If it was the seller's active pet (shouldn't be, but be safe), clear it.
+  update public.profiles set active_pet_id = null
+    where id = seller_id and active_pet_id = target_pet;
+  delete from public.adoption_listings where pet_id = target_pet;
+  return 'ok';
+end; $$;
+grant execute on function public.adopt_pet(text) to authenticated;
