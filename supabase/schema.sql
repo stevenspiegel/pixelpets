@@ -13,7 +13,7 @@
 create table if not exists public.profiles (
   id            uuid primary key references auth.users (id) on delete cascade,
   username      text unique not null,
-  tokens        integer not null default 25,
+  tokens        integer not null default 150,  -- one egg's worth (EGG_COST)
   earn_date     text    not null default '',
   earned_today  integer not null default 0,
   active_pet_id text,
@@ -401,3 +401,184 @@ begin
   return 'ok';
 end; $$;
 grant execute on function public.adopt_pet(text) to authenticated;
+
+-- ── Server-authoritative wallet (anti-cheat, step 1) ──────────────────────────
+-- Previously the client wrote its own token balance and could set it to
+-- anything. These RPCs make the SERVER the only thing that can change tokens:
+-- every way to earn (play, battle) or spend (hatch, train) goes through a
+-- SECURITY DEFINER function, and the client's direct write access to
+-- profiles.tokens is revoked at the bottom of this block.
+--
+-- Scope: this closes "give myself tokens" and "hatch for free". Pet stats and
+-- rarity are still trusted from the client at hatch (deriving/validating them
+-- server-side is the next step). Constants below mirror src/state/usePet.ts —
+-- keep them in sync if you change them there (EGG_COST, PLAY_REWARD,
+-- DAILY_EARN_CAP, MAX_PETS, train costs, stage level caps, battleReward).
+
+-- Spend tokens to hatch: insert the (client-built) pet and deduct the egg cost
+-- atomically. Returns the new token balance.
+create or replace function public.hatch_pet(p_pet jsonb)
+returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  me    uuid := auth.uid();
+  cost  integer := 150;          -- EGG_COST
+  bal   integer;
+  owned integer;
+  pid   text := p_pet->>'id';
+begin
+  if pid is null then raise exception 'Invalid pet'; end if;
+  select count(*) into owned from public.pets where owner = me;
+  if owned >= 8 then raise exception 'Your collection is full'; end if;
+  select tokens into bal from public.profiles where id = me for update;
+  if bal < cost then raise exception 'Not enough tokens'; end if;
+  insert into public.pets (
+    id, owner, name, species, rarity, stats, level, stage,
+    hunger, happiness, cleanliness, energy, health, age,
+    born_at, last_tick, asleep, poops, sick, ascended
+  ) values (
+    pid, me, p_pet->>'name', p_pet->>'species', p_pet->>'rarity', (p_pet->'stats'),
+    coalesce((p_pet->>'level')::int, 1), p_pet->>'stage',
+    (p_pet->>'hunger')::real, (p_pet->>'happiness')::real,
+    (p_pet->>'cleanliness')::real, (p_pet->>'energy')::real,
+    (p_pet->>'health')::real, (p_pet->>'age')::real,
+    (p_pet->>'bornAt')::bigint, (p_pet->>'lastTick')::bigint,
+    coalesce((p_pet->>'asleep')::boolean, false),
+    coalesce((p_pet->>'poops')::real, 0),
+    coalesce((p_pet->>'sick')::boolean, false),
+    coalesce((p_pet->>'ascended')::boolean, false)
+  );
+  update public.profiles set tokens = tokens - cost, active_pet_id = pid where id = me;
+  return bal - cost;
+end; $$;
+grant execute on function public.hatch_pet(jsonb) to authenticated;
+
+-- Train one stat: the server reads the pet's current value, computes the cost,
+-- checks the balance, applies the increment + per-stage level cap, and deducts.
+-- Returns { stats, level, tokens }.
+create or replace function public.train_pet(p_pet_id text, p_stat text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me       uuid := auth.uid();
+  pet      public.pets%rowtype;
+  base     integer;
+  inc      integer;
+  cost     integer;
+  cap      integer;
+  bal      integer;
+  newstats jsonb;
+  newlevel integer;
+begin
+  if p_stat not in ('attack', 'defense', 'speed', 'maxHp') then
+    raise exception 'Invalid stat';
+  end if;
+  select * into pet from public.pets where id = p_pet_id and owner = me;
+  if pet.id is null then raise exception 'That pet is not yours'; end if;
+  if pet.stage in ('egg', 'dead') then raise exception 'That pet cannot train now'; end if;
+  cap := case pet.stage
+           when 'baby' then 10 when 'child' then 20
+           when 'teen' then 35 when 'adult' then 50 else 0 end;
+  if coalesce(pet.level, 1) >= cap then
+    raise exception 'At the level cap for this stage';
+  end if;
+  base := (pet.stats->>p_stat)::int;
+  inc  := case when p_stat = 'maxHp' then 4 else 1 end;
+  cost := case when p_stat = 'maxHp' then 5 + (base / 8) else 5 + (base / 2) end;
+  select tokens into bal from public.profiles where id = me for update;
+  if bal < cost then raise exception 'Not enough tokens'; end if;
+  newstats := jsonb_set(pet.stats, array[p_stat], to_jsonb(base + inc));
+  newlevel := least(cap, coalesce(pet.level, 1) + 1);
+  update public.pets set stats = newstats, level = newlevel where id = p_pet_id;
+  update public.profiles set tokens = tokens - cost where id = me;
+  return jsonb_build_object('stats', newstats, 'level', newlevel, 'tokens', bal - cost);
+end; $$;
+grant execute on function public.train_pet(text, text) to authenticated;
+
+-- Earn tokens from a successful play, honoring the daily cap (UTC day).
+create or replace function public.earn_play_tokens()
+returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  me     uuid := auth.uid();
+  reward integer := 3;    -- PLAY_REWARD
+  cap    integer := 60;   -- DAILY_EARN_CAP
+  today  text := to_char((now() at time zone 'utc'), 'YYYY-MM-DD');
+  prof   public.profiles%rowtype;
+  used   integer;
+  gain   integer;
+begin
+  select * into prof from public.profiles where id = me for update;
+  used := case when prof.earn_date = today then prof.earned_today else 0 end;
+  gain := greatest(0, least(reward, cap - used));
+  update public.profiles
+    set tokens = tokens + gain, earn_date = today, earned_today = used + gain
+    where id = me;
+  return prof.tokens + gain;
+end; $$;
+grant execute on function public.earn_play_tokens() to authenticated;
+
+-- Credit a battle win. The reward is computed server-side from the (clamped)
+-- enemy level so the client can't request an arbitrary amount. NOTE: this still
+-- trusts that the client actually won — server-side battle resolution is a
+-- later step.
+create or replace function public.claim_battle_reward(p_enemy_level integer)
+returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  me     uuid := auth.uid();
+  lvl    integer := greatest(1, least(50, coalesce(p_enemy_level, 1)));
+  reward integer := 5 + (lvl / 5);   -- battleReward()
+  bal    integer;
+begin
+  update public.profiles set tokens = tokens + reward where id = me
+    returning tokens into bal;
+  return bal;
+end; $$;
+grant execute on function public.claim_battle_reward(integer) to authenticated;
+
+-- Legacy migration: insert local pets into the cloud (owner = caller), skipping
+-- any that already exist and capping the collection at 8. Used by the one-time
+-- "import/restore pets from this device" flow now that direct inserts are off.
+create or replace function public.import_pets(p_pets jsonb)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  me    uuid := auth.uid();
+  owned integer;
+  item  jsonb;
+  pid   text;
+begin
+  select count(*) into owned from public.pets where owner = me;
+  for item in select * from jsonb_array_elements(p_pets) loop
+    exit when owned >= 8;
+    pid := item->>'id';
+    if pid is null then continue; end if;
+    if exists (select 1 from public.pets where id = pid) then continue; end if;
+    insert into public.pets (
+      id, owner, name, species, rarity, stats, level, stage,
+      hunger, happiness, cleanliness, energy, health, age,
+      born_at, last_tick, asleep, poops, sick, ascended
+    ) values (
+      pid, me, item->>'name', item->>'species', item->>'rarity', (item->'stats'),
+      coalesce((item->>'level')::int, 1), item->>'stage',
+      (item->>'hunger')::real, (item->>'happiness')::real, (item->>'cleanliness')::real,
+      (item->>'energy')::real, (item->>'health')::real, (item->>'age')::real,
+      (item->>'bornAt')::bigint, (item->>'lastTick')::bigint,
+      coalesce((item->>'asleep')::boolean, false), coalesce((item->>'poops')::real, 0),
+      coalesce((item->>'sick')::boolean, false), coalesce((item->>'ascended')::boolean, false)
+    );
+    owned := owned + 1;
+  end loop;
+end; $$;
+grant execute on function public.import_pets(jsonb) to authenticated;
+
+-- Lock down direct writes now that the server owns these:
+--   • profiles: clients may only set their active pet; tokens/earn columns are
+--     server-only (changed solely by the RPCs above).
+--   • pets: clients can no longer INSERT directly — hatch_pet / import_pets are
+--     the only ways to create a pet. (Stat/care UPDATEs stay open for now;
+--     locking those columns is the next hardening step.)
+revoke update on public.profiles from anon, authenticated;
+grant  update (active_pet_id) on public.profiles to authenticated;
+revoke insert on public.pets from anon, authenticated;
