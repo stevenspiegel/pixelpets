@@ -14,6 +14,8 @@ type Props = {
   username: string;
   onHatch: (name: string) => void;
   onLogOut: () => void;
+  tokens: number;
+  cost: number;
   onCancel?: () => void;
   onRestore?: () => void;
 };
@@ -22,10 +24,13 @@ export const HatchScreen: React.FC<Props> = ({
   username,
   onHatch,
   onLogOut,
+  tokens,
+  cost,
   onCancel,
   onRestore,
 }) => {
   const [name, setName] = useState('');
+  const affordable = tokens >= cost;
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -49,6 +54,11 @@ export const HatchScreen: React.FC<Props> = ({
         style={styles.egg}
         resizeMode="contain"
       />
+      <View style={styles.priceRow}>
+        <Text style={styles.priceLabel}>EGG</Text>
+        <Text style={styles.priceValue}>✦ {cost}</Text>
+      </View>
+      <Text style={styles.balance}>you have ✦ {tokens}</Text>
       <TextInput
         value={name}
         onChangeText={setName}
@@ -59,14 +69,21 @@ export const HatchScreen: React.FC<Props> = ({
         autoCapitalize="words"
       />
       <Pressable
-        onPress={() => onHatch(name.trim() || 'Pixel')}
+        onPress={() => affordable && onHatch(name.trim() || 'Pixel')}
+        disabled={!affordable}
         style={({ pressed }) => [
           styles.button,
-          pressed && styles.buttonPressed,
+          !affordable && styles.buttonDisabled,
+          affordable && pressed && styles.buttonPressed,
         ]}
       >
-        <Text style={styles.buttonText}>GET AN EGG!</Text>
+        <Text style={styles.buttonText}>GET AN EGG · ✦ {cost}</Text>
       </Pressable>
+      {!affordable && (
+        <Text style={styles.hint}>
+          Not enough tokens — win battles and play to earn more!
+        </Text>
+      )}
       {onCancel && (
         <Pressable onPress={onCancel} style={styles.cancel} hitSlop={8}>
           <Text style={styles.cancelText}>← back to my pets</Text>
@@ -135,7 +152,34 @@ const styles = StyleSheet.create({
   egg: {
     width: 200,
     height: 200,
-    marginBottom: 18,
+    marginBottom: 10,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 4,
+  },
+  priceLabel: {
+    color: '#d6c8ff',
+    fontFamily: 'Courier',
+    fontSize: 13,
+    fontWeight: 'bold',
+    letterSpacing: 3,
+  },
+  priceValue: {
+    color: '#ffd24d',
+    fontFamily: 'Courier',
+    fontSize: 16,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  balance: {
+    color: '#8a76c0',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    letterSpacing: 1,
+    marginBottom: 14,
   },
   input: {
     width: '80%',
@@ -163,6 +207,20 @@ const styles = StyleSheet.create({
   buttonPressed: {
     transform: [{ translateY: 2 }],
     backgroundColor: '#e23a5a',
+  },
+  buttonDisabled: {
+    backgroundColor: '#4a3a5a',
+    borderColor: '#6a5a7a',
+    opacity: 0.7,
+  },
+  hint: {
+    color: '#ff8aa3',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 14,
+    maxWidth: 300,
+    lineHeight: 18,
   },
   buttonText: {
     color: '#fff',
