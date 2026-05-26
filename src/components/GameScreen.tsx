@@ -16,7 +16,7 @@ import { ActionButton } from './ActionButton';
 import { RarityBadge } from './RarityBadge';
 import { PetSwitcher } from './PetSwitcher';
 import { BattleStats } from './BattleStats';
-import { MAX_PETS, speciesName, canAscend } from '../state/usePet';
+import { MAX_PETS, speciesName, canAscend, effectiveRarity } from '../state/usePet';
 
 type Props = {
   pet: PetState;
@@ -172,7 +172,7 @@ export const GameScreen: React.FC<Props> = ({
           {!isEgg ? ` · ${speciesName(pet.species).toUpperCase()}` : ''} ·{' '}
           {formatAge(pet.age)}
         </Text>
-        {!isEgg && <RarityBadge rarity={pet.rarity} />}
+        {!isEgg && <RarityBadge rarity={effectiveRarity(pet)} />}
       </View>
 
       <View style={styles.tama}>
@@ -240,7 +240,9 @@ export const GameScreen: React.FC<Props> = ({
           ]}
         >
           <Text style={styles.ascendText}>✨ ASCEND ✨</Text>
-          <Text style={styles.ascendSub}>your dragon is ready to transcend</Text>
+          <Text style={styles.ascendSub}>
+            your {speciesName(pet.species).toLowerCase()} is ready to transcend
+          </Text>
         </Pressable>
       )}
 

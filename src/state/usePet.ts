@@ -9,6 +9,7 @@ import {
   BattleStats,
   StatKey,
   DRAGON_SPECIES,
+  UNICORN_SPECIES,
 } from '../types';
 
 const STORAGE_PREFIX_V1 = '@pixelpets/pet/v1/';   // legacy single-pet save
@@ -30,6 +31,8 @@ const SPECIES_BY_RARITY: Record<Rarity, readonly string[]> = {
   rare:      ['🦌', '🦥', '🦉', '🦅', '🦘', '🦫', '🦒'],
   epic:      ['🐅', '🐘', '🦏', '🐊', '🦈', '🐙'],
   legendary: ['🐉', '🦄', '🧜', '🦖'],
+  // Not hatchable — reached only by ascending a dragon or unicorn.
+  mythical: [],
 };
 
 // Species no longer in the hatch pool, kept so existing pets still classify
@@ -72,8 +75,10 @@ const RARITY_WEIGHTS: Record<Rarity, number> = {
   rare: 10,
   epic: 4,
   legendary: 1,
+  mythical: 0, // never rolled; only reached via ascension
 };
 
+// Drives the hatch roll; mythical is intentionally excluded (ascension only).
 const RARITY_ORDER: readonly Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
 
 // Naming an egg one of these (case-insensitive) guarantees that species
@@ -113,6 +118,7 @@ const RARITY_POWER: Record<Rarity, number> = {
   rare: 1.45,
   epic: 1.75,
   legendary: 2.2,
+  mythical: 2.6,
 };
 
 const MAX_LEVEL = 50;
@@ -334,9 +340,18 @@ const applyDecay = (pet: PetState, now: number): PetState => {
   return next;
 };
 
-// A dragon may ascend once it reaches adulthood. One-way, terminal upgrade.
+// Dragons and unicorns may ascend once adult. One-way, terminal upgrade.
 export const canAscend = (pet: PetState): boolean =>
-  pet.species === DRAGON_SPECIES && pet.stage === 'adult' && !pet.ascended;
+  (pet.species === DRAGON_SPECIES || pet.species === UNICORN_SPECIES) &&
+  pet.stage === 'adult' &&
+  !pet.ascended;
+
+// An ascended pet is shown as mythical (one tier above legendary). Derived so
+// existing ascended pets reclassify without a migration.
+export const effectiveRarity = (pet: {
+  rarity: Rarity;
+  ascended?: boolean;
+}): Rarity => (pet.ascended ? 'mythical' : pet.rarity);
 
 const applyAction = (pet: PetState, kind: ActionKind, now: number): PetState => {
   if (pet.stage === 'dead' || pet.stage === 'egg') return pet;

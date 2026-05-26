@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Image, StyleSheet, Animated, Easing } from 'react-native';
 import { PetState } from '../types';
-import { STAGE_BABY_AT } from '../state/usePet';
+import { STAGE_BABY_AT, effectiveRarity } from '../state/usePet';
 import { SPRITES, hasSprite } from '../sprites';
 import { imageSpriteFor } from '../sprites/images';
 import { PixelArt } from './PixelArt';
@@ -56,10 +56,11 @@ export const Pet: React.FC<Props> = ({ pet }) => {
   const bob = useRef(new Animated.Value(0)).current;
   const sparkle = useRef(new Animated.Value(0)).current;
 
+  const rarity = effectiveRarity(pet);
   const showSparkles =
     pet.stage !== 'egg' &&
     pet.stage !== 'dead' &&
-    (pet.rarity === 'epic' || pet.rarity === 'legendary');
+    (rarity === 'epic' || rarity === 'legendary' || rarity === 'mythical');
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -129,7 +130,12 @@ export const Pet: React.FC<Props> = ({ pet }) => {
                 {
                   transform: [{ translateX: offset.x }, { translateY: offset.y }],
                   opacity,
-                  color: pet.rarity === 'legendary' ? '#ffd24d' : '#cc7fff',
+                  color:
+                    rarity === 'mythical'
+                      ? '#ff7af0'
+                      : rarity === 'legendary'
+                        ? '#ffd24d'
+                        : '#cc7fff',
                 },
               ]}
             >
