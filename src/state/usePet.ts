@@ -25,7 +25,7 @@ export const MAX_PETS = 8;
 // excluded so every newly hatched pet shows as a recognizable creature
 // rather than a floating head.
 const SPECIES_BY_RARITY: Record<Rarity, readonly string[]> = {
-  common:    ['🐕', '🐈', '🐇', '🐢', '🐠'],
+  common:    ['🐕', '🐈', '🐇', '🐢'],
   uncommon:  ['🦊', '🐍', '🦎', '🦇', '🦔', '🐧'],
   rare:      ['🦌', '🦥', '🦉', '🦅', '🦘', '🦫', '🦒'],
   epic:      ['🐅', '🐘', '🦏', '🐊', '🦈', '🐙'],
@@ -35,7 +35,7 @@ const SPECIES_BY_RARITY: Record<Rarity, readonly string[]> = {
 // Species no longer in the hatch pool, kept so existing pets still classify
 // and render. Includes both very-old face emoji and species retired later.
 const LEGACY_RARITY: Record<string, Rarity> = {
-  '🐦': 'common',
+  '🐦': 'common',  '🐠': 'common',
   '🐶': 'common',  '🐱': 'common',  '🐰': 'common',
   '🐭': 'common',  '🐹': 'common',  '🐁': 'common',  '🐀': 'common',
   '🐸': 'uncommon', '🦝': 'uncommon', '🦨': 'uncommon',
