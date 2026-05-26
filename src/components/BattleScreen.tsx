@@ -417,6 +417,7 @@ const ServerBattle: React.FC<Props> = ({
               >
                 <Text style={styles.moveIcon}>{TACTICS[t].icon}</Text>
                 <Text style={styles.moveLabel}>{TACTICS[t].label.toUpperCase()}</Text>
+                <Text style={styles.moveSub}>{TACTICS[t].stance}</Text>
                 <Text style={styles.moveSub}>{TACTICS[t].hint}</Text>
               </Pressable>
             ))}

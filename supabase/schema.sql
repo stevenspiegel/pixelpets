@@ -817,9 +817,12 @@ end; $$;
 grant execute on function public.start_battle(text, text) to authenticated;
 
 -- Resolve one turn. The player commits a tactic; the enemy's is rolled blindly.
--- Damage scales with attacker.attack vs defender.defense (atk²/(atk+def)) and is
--- multiplied by the tactic matchup. The faster side strikes first; a knockout
--- prevents the slower side from retaliating that turn.
+-- Damage scales with attacker.attack vs defender.defense (atk²/(atk+def)), then
+-- two strategic layers (mirrored in src/battle/tactics.ts):
+--   • inherent stance — aggressive deals & takes +30%, defensive −30% on both;
+--   • RPS matchup — winning aggressive▶balanced▶defensive▶aggressive ×1.5 / ×0.75.
+-- The faster side strikes first; a knockout prevents the slower side from
+-- retaliating that turn.
 create or replace function public.battle_turn(p_battle_id uuid, p_tactic text)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -828,6 +831,8 @@ declare
   b   public.battles%rowtype;
   ptac text; etac text; mu text;
   pmult double precision; emult double precision;
+  p_out double precision; p_in double precision;
+  e_out double precision; e_in double precision;
   pdmg int; edmg int; p_applied int := 0; e_applied int := 0;
   php int; ehp int; player_first boolean; result text;
   reward int := 0; bal int;
@@ -850,10 +855,19 @@ begin
   pmult := case mu when 'advantage' then 1.5 when 'disadvantage' then 0.75 else 1.0 end;
   emult := case mu when 'advantage' then 0.75 when 'disadvantage' then 1.5 else 1.0 end;
 
+  -- Inherent stance multipliers (deal / take), applied to whoever chose them.
+  p_out := case ptac when 'aggressive' then 1.3 when 'defensive' then 0.7 else 1.0 end;
+  p_in  := p_out;
+  e_out := case etac when 'aggressive' then 1.3 when 'defensive' then 0.7 else 1.0 end;
+  e_in  := e_out;
+
+  -- Player's damage: own attack stance × foe's defend stance × matchup.
   pdmg := greatest(1, round(
-    (b.p_atk::numeric * b.p_atk / (b.p_atk + b.e_def)) * 1.8 * pmult * (0.9 + random() * 0.2)));
+    (b.p_atk::numeric * b.p_atk / (b.p_atk + b.e_def)) * 1.8 * pmult * p_out * e_in
+    * (0.9 + random() * 0.2)));
   edmg := greatest(1, round(
-    (b.e_atk::numeric * b.e_atk / (b.e_atk + b.p_def)) * 1.8 * emult * (0.9 + random() * 0.2)));
+    (b.e_atk::numeric * b.e_atk / (b.e_atk + b.p_def)) * 1.8 * emult * e_out * p_in
+    * (0.9 + random() * 0.2)));
 
   php := b.p_hp; ehp := b.e_hp;
   player_first := b.p_spd >= b.e_spd;
