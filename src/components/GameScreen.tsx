@@ -33,6 +33,7 @@ type Props = {
   onPvp?: () => void;
   onLeaderboard?: () => void;
   onFriends?: () => void;
+  onMarketplace?: () => void;
   onRestore?: () => void;
   onLogOut: () => void;
 };
@@ -76,6 +77,7 @@ export const GameScreen: React.FC<Props> = ({
   onPvp,
   onLeaderboard,
   onFriends,
+  onMarketplace,
   onRestore,
   onLogOut,
 }) => {
@@ -315,6 +317,12 @@ export const GameScreen: React.FC<Props> = ({
       {onFriends && (
         <Pressable onPress={onFriends} style={styles.resetButton} hitSlop={8}>
           <Text style={styles.resetText}>👥 friends</Text>
+        </Pressable>
+      )}
+
+      {onMarketplace && (
+        <Pressable onPress={onMarketplace} style={styles.resetButton} hitSlop={8}>
+          <Text style={styles.resetText}>🏷️ marketplace</Text>
         </Pressable>
       )}
 

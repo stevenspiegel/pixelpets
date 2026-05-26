@@ -19,6 +19,7 @@ import { BattleScreen } from './src/components/BattleScreen';
 import { ImportScreen } from './src/components/ImportScreen';
 import { LeaderboardScreen } from './src/components/LeaderboardScreen';
 import { FriendsScreen } from './src/components/FriendsScreen';
+import { MarketplaceScreen } from './src/components/MarketplaceScreen';
 import { recordPvpResult } from './src/battle/pvp';
 
 const SKY = '#1565ad';
@@ -40,6 +41,7 @@ export default function App() {
     renamePet,
     trainStat,
     grantTokens,
+    reloadCollection,
     importablePets,
     scanLocalPets,
     importLocalPets,
@@ -48,9 +50,9 @@ export default function App() {
   } = usePet(username);
 
   const [addingNew, setAddingNew] = useState(false);
-  // null = game screen; 'pve'/'pvp' = battle; 'leaderboard' = leaderboard.
+  // null = game screen; 'pve'/'pvp' = battle; the rest are full-screen menus.
   const [view, setView] = useState<
-    null | 'pve' | 'pvp' | 'leaderboard' | 'friends'
+    null | 'pve' | 'pvp' | 'leaderboard' | 'friends' | 'marketplace'
   >(null);
 
   // Whenever the user changes (login/logout), reset transient overlays.
@@ -130,6 +132,17 @@ export default function App() {
     screen = <LeaderboardScreen username={username} onExit={() => setView(null)} />;
   } else if (view === 'friends' && username) {
     screen = <FriendsScreen onExit={() => setView(null)} />;
+  } else if (view === 'marketplace' && username && activePet) {
+    screen = (
+      <MarketplaceScreen
+        pets={pets}
+        activeId={activePet.id}
+        tokens={tokens}
+        username={username}
+        onReload={reloadCollection}
+        onExit={() => setView(null)}
+      />
+    );
   } else if (activePet) {
     screen = (
       <GameScreen
@@ -147,6 +160,7 @@ export default function App() {
         onPvp={isSupabaseConfigured ? () => setView('pvp') : undefined}
         onLeaderboard={isSupabaseConfigured ? () => setView('leaderboard') : undefined}
         onFriends={isSupabaseConfigured ? () => setView('friends') : undefined}
+        onMarketplace={isSupabaseConfigured ? () => setView('marketplace') : undefined}
         onRestore={onRestore}
         onLogOut={logOut}
       />

@@ -801,6 +801,19 @@ export const usePet = (userId: string | null) => {
     }));
   }, []);
 
+  // Re-read the collection from the cloud, replacing local state. Used after a
+  // marketplace transfer so an adopted pet appears (and a sold one disappears)
+  // without the next sync clobbering the change. No-op in local-only mode.
+  const reloadCollection = useCallback(async () => {
+    if (!isSupabaseConfigured || !userRef.current) return;
+    const fresh = await loadCloudCollection();
+    setCol({
+      pets: fresh.pets.map((p) => applyDecay(p, Date.now())),
+      activeId: fresh.activeId,
+      wallet: fresh.wallet,
+    });
+  }, []);
+
   const renamePet = useCallback((id: string, name: string) => {
     const clean = name.trim().slice(0, 16);
     if (!clean) return;
@@ -870,6 +883,7 @@ export const usePet = (userId: string | null) => {
     renamePet,
     trainStat,
     grantTokens,
+    reloadCollection,
     importablePetsCount: importable?.pets.length ?? 0,
     scanLocalPets,
     importLocalPets,
