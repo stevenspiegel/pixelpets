@@ -535,14 +535,11 @@ const findLocalPets = async (): Promise<PetState[]> => {
 // DB rows are snake_case; PetState is camelCase. Numeric columns are coerced
 // since PostgREST can return bigints as strings.
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const petToRow = (p: PetState, owner: string) => ({
+// Only the client-writable (care) columns. Stats/level/rarity/species/ascended
+// are server-owned (set by RPCs) and locked from direct client writes.
+const petCareRow = (p: PetState) => ({
   id: p.id,
-  owner,
   name: p.name,
-  species: p.species,
-  rarity: p.rarity,
-  stats: p.stats,
-  level: p.level,
   stage: p.stage,
   hunger: p.hunger,
   happiness: p.happiness,
@@ -550,12 +547,10 @@ const petToRow = (p: PetState, owner: string) => ({
   energy: p.energy,
   health: p.health,
   age: p.age,
-  born_at: p.bornAt,
   last_tick: p.lastTick,
   asleep: p.asleep,
   poops: p.poops,
   sick: p.sick,
-  ascended: p.ascended ?? false,
 });
 
 const petFromRow = (r: any): PetState => ({
@@ -616,7 +611,7 @@ const syncCloudCollection = async (col: Collection): Promise<void> => {
   if (!uid) return;
 
   if (col.pets.length > 0) {
-    const up = await supabase.from('pets').upsert(col.pets.map((p) => petToRow(p, uid)));
+    const up = await supabase.from('pets').upsert(col.pets.map((p) => petCareRow(p)));
     if (up.error) console.warn('[pixelpets] upsert pets error:', up.error.message);
     // ids are alphanumeric/underscore only, so an unquoted list is safe.
     const idList = col.pets.map((p) => p.id).join(',');
@@ -631,14 +626,11 @@ const syncCloudCollection = async (col: Collection): Promise<void> => {
     if (del.error) console.warn('[pixelpets] clear pets error:', del.error.message);
   }
 
+  // Tokens / earn columns are server-owned now (changed only by the wallet
+  // RPCs), so the periodic sync only writes the active pet selection.
   const prof = await supabase
     .from('profiles')
-    .update({
-      tokens: col.wallet.tokens,
-      earn_date: col.wallet.earnDate,
-      earned_today: col.wallet.earnedToday,
-      active_pet_id: col.activeId,
-    })
+    .update({ active_pet_id: col.activeId })
     .eq('id', uid);
   if (prof.error) console.warn('[pixelpets] update profile error:', prof.error.message);
 };
@@ -725,10 +717,31 @@ export const usePet = (userId: string | null) => {
 
   const hatch = useCallback((name: string) => {
     if (!userRef.current) return;
+    if (isSupabaseConfigured) {
+      // Server rolls the species/rarity/stats, charges the egg cost, and inserts
+      // the pet — nothing about it is client-supplied, so it can't be forged.
+      (async () => {
+        const { data, error } = await supabase!.rpc('hatch_pet', { p_name: name });
+        if (error) {
+          console.warn('[pixelpets] hatch error:', error.message);
+          return;
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res = data as any;
+        const pet = applyDecay(petFromRow(res.pet), Date.now());
+        setCol((c) => ({
+          ...c,
+          pets: c.pets.length >= MAX_PETS ? c.pets : [...c.pets, pet],
+          activeId: pet.id,
+          wallet: { ...c.wallet, tokens: Number(res.tokens) },
+        }));
+      })();
+      return;
+    }
+    const pet = createPet(name);
     setCol((c) => {
       if (c.pets.length >= MAX_PETS) return c;
       if (c.wallet.tokens < EGG_COST) return c;
-      const pet = createPet(name);
       return {
         ...c,
         pets: [...c.pets, pet],
@@ -751,7 +764,33 @@ export const usePet = (userId: string | null) => {
     });
   }, []);
 
+  // Re-read the collection from the cloud, replacing local state. Used after a
+  // marketplace transfer (so an adopted pet appears and a sold one disappears)
+  // and to revert a rejected optimistic change. No-op in local-only mode.
+  const reloadCollection = useCallback(async () => {
+    if (!isSupabaseConfigured || !userRef.current) return;
+    const fresh = await loadCloudCollection();
+    setCol({
+      pets: fresh.pets.map((p) => applyDecay(p, Date.now())),
+      activeId: fresh.activeId,
+      wallet: fresh.wallet,
+    });
+  }, []);
+
   const act = useCallback((kind: ActionKind) => {
+    const cloud = isSupabaseConfigured;
+    // Decide up front (from the latest committed state) whether a play succeeds,
+    // so the cloud reward RPC can be fired as a side-effect.
+    let played = false;
+    if (kind === 'play') {
+      const c = colRef.current;
+      const active = c.pets.find((p) => p.id === c.activeId);
+      if (active) {
+        const d = applyDecay(active, Date.now());
+        played =
+          d.stage !== 'egg' && d.stage !== 'dead' && !d.asleep && d.energy >= 10;
+      }
+    }
     setCol((c) => {
       if (!c.activeId) return c;
       const now = Date.now();
@@ -759,19 +798,65 @@ export const usePet = (userId: string | null) => {
       const pets = c.pets.map((p) =>
         p.id === c.activeId ? applyAction(p, kind, now) : p
       );
-      // A successful PLAY earns Pixel tokens (up to the daily cap).
+      // Local mode awards play tokens here; cloud mode does it via RPC below so
+      // the server owns the balance and the daily cap.
       let wallet = c.wallet;
-      if (kind === 'play' && active) {
+      if (!cloud && kind === 'play' && active) {
         const d = applyDecay(active, now);
-        const played =
+        const ok =
           d.stage !== 'egg' && d.stage !== 'dead' && !d.asleep && d.energy >= 10;
-        if (played) wallet = awardTokens(c.wallet, PLAY_REWARD);
+        if (ok) wallet = awardTokens(c.wallet, PLAY_REWARD);
       }
       return { ...c, pets, wallet };
     });
-  }, []);
+    if (cloud && played) {
+      (async () => {
+        const { data, error } = await supabase!.rpc('earn_play_tokens');
+        if (!error && data != null) {
+          setCol((c) => ({ ...c, wallet: { ...c.wallet, tokens: Number(data) } }));
+        }
+      })();
+    }
+    // Ascension is now a locked column, so persist it via RPC (the setCol above
+    // applied it optimistically). Revert from the cloud if the server rejects.
+    if (cloud && kind === 'ascend') {
+      const id = colRef.current.activeId;
+      if (id) {
+        (async () => {
+          const { error } = await supabase!.rpc('ascend_pet', { p_pet_id: id });
+          if (error) {
+            console.warn('[pixelpets] ascend error:', error.message);
+            await reloadCollection();
+          }
+        })();
+      }
+    }
+  }, [reloadCollection]);
 
   const trainStat = useCallback((petId: string, stat: StatKey) => {
+    if (isSupabaseConfigured) {
+      // Server computes the cost, enforces the cap, and deducts tokens.
+      (async () => {
+        const { data, error } = await supabase!.rpc('train_pet', {
+          p_pet_id: petId,
+          p_stat: stat,
+        });
+        if (error) {
+          console.warn('[pixelpets] train error:', error.message);
+          return;
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res = data as any;
+        setCol((c) => ({
+          ...c,
+          pets: c.pets.map((p) =>
+            p.id === petId ? { ...p, stats: res.stats, level: Number(res.level) } : p
+          ),
+          wallet: { ...c.wallet, tokens: Number(res.tokens) },
+        }));
+      })();
+      return;
+    }
     setCol((c) => {
       const pet = c.pets.find((p) => p.id === petId);
       if (!pet) return c;
@@ -792,7 +877,7 @@ export const usePet = (userId: string | null) => {
     });
   }, []);
 
-  // Add tokens outside the daily play cap (e.g. battle rewards).
+  // Add tokens outside the daily play cap (local mode only — battle rewards).
   const grantTokens = useCallback((amount: number) => {
     if (amount <= 0) return;
     setCol((c) => ({
@@ -801,17 +886,15 @@ export const usePet = (userId: string | null) => {
     }));
   }, []);
 
-  // Re-read the collection from the cloud, replacing local state. Used after a
-  // marketplace transfer so an adopted pet appears (and a sold one disappears)
-  // without the next sync clobbering the change. No-op in local-only mode.
-  const reloadCollection = useCallback(async () => {
-    if (!isSupabaseConfigured || !userRef.current) return;
-    const fresh = await loadCloudCollection();
-    setCol({
-      pets: fresh.pets.map((p) => applyDecay(p, Date.now())),
-      activeId: fresh.activeId,
-      wallet: fresh.wallet,
+  // Cloud battle reward: the server computes the amount from the enemy level.
+  const claimBattleReward = useCallback(async (enemyLevel: number) => {
+    if (!isSupabaseConfigured) return;
+    const { data, error } = await supabase!.rpc('claim_battle_reward', {
+      p_enemy_level: enemyLevel,
     });
+    if (!error && data != null) {
+      setCol((c) => ({ ...c, wallet: { ...c.wallet, tokens: Number(data) } }));
+    }
   }, []);
 
   const renamePet = useCallback((id: string, name: string) => {
@@ -845,22 +928,33 @@ export const usePet = (userId: string | null) => {
     setImportable((local) => {
       if (!local) return null;
       const now = Date.now();
-      setCol((c) => {
-        const byId = new Map(c.pets.map((p) => [p.id, p]));
-        for (const p of local.pets) if (!byId.has(p.id)) byId.set(p.id, p);
-        const merged = Array.from(byId.values())
-          .slice(0, MAX_PETS)
-          .map((p) => applyDecay(migratePet(p), now));
-        return {
-          pets: merged,
-          activeId: c.activeId ?? merged[0]?.id ?? null,
-          wallet: c.wallet,
-        };
-      });
+      const sanitized = local.pets.map((p) => migratePet(p));
+      if (isSupabaseConfigured) {
+        // Direct inserts are locked down, so push the legacy pets through the
+        // import RPC, then reload the authoritative collection from the cloud.
+        (async () => {
+          const { error } = await supabase!.rpc('import_pets', { p_pets: sanitized });
+          if (error) console.warn('[pixelpets] import error:', error.message);
+          await reloadCollection();
+        })();
+      } else {
+        setCol((c) => {
+          const byId = new Map(c.pets.map((p) => [p.id, p]));
+          for (const p of sanitized) if (!byId.has(p.id)) byId.set(p.id, p);
+          const merged = Array.from(byId.values())
+            .slice(0, MAX_PETS)
+            .map((p) => applyDecay(p, now));
+          return {
+            pets: merged,
+            activeId: c.activeId ?? merged[0]?.id ?? null,
+            wallet: c.wallet,
+          };
+        });
+      }
       if (uid) AsyncStorage.setItem(importedKey(uid), '1').catch(() => {});
       return null;
     });
-  }, []);
+  }, [reloadCollection]);
 
   const skipImport = useCallback(() => {
     const uid = userRef.current;
@@ -883,6 +977,7 @@ export const usePet = (userId: string | null) => {
     renamePet,
     trainStat,
     grantTokens,
+    claimBattleReward,
     reloadCollection,
     importablePetsCount: importable?.pets.length ?? 0,
     scanLocalPets,

@@ -41,6 +41,7 @@ export default function App() {
     renamePet,
     trainStat,
     grantTokens,
+    claimBattleReward,
     reloadCollection,
     importablePets,
     scanLocalPets,
@@ -123,7 +124,9 @@ export default function App() {
       <BattleScreen
         pet={activePet}
         mode={view}
-        onReward={grantTokens}
+        onReward={(amount, enemyLevel) =>
+          isSupabaseConfigured ? claimBattleReward(enemyLevel) : grantTokens(amount)
+        }
         onResult={view === 'pvp' ? recordPvpResult : undefined}
         onExit={() => setView(null)}
       />
