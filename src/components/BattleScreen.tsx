@@ -15,7 +15,7 @@ import { CreatureSprite } from './CreatureSprite';
 type Props = {
   pet: PetState;
   mode?: 'pve' | 'pvp';
-  onReward: (amount: number) => void;
+  onReward: (amount: number, enemyLevel: number) => void;
   onResult?: (won: boolean) => void;
   onExit: () => void;
 };
@@ -96,7 +96,7 @@ export const BattleScreen: React.FC<Props> = ({
       rewardedRef.current = true;
       const amt = battleReward(state.enemy.level);
       setReward(amt);
-      onReward(amt);
+      onReward(amt, state.enemy.level);
     }
     if ((state.status === 'won' || state.status === 'lost') && !resultRef.current) {
       resultRef.current = true;
