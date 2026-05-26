@@ -62,6 +62,7 @@ export const playerCombatant = (pet: PetState): Combatant => {
   };
 };
 
-// Token reward for defeating an opponent of the given level.
+// Token reward for defeating an opponent of the given level. Kept modest so
+// saving up for an egg takes some time.
 export const battleReward = (enemyLevel: number): number =>
-  12 + Math.floor(enemyLevel / 4);
+  5 + Math.floor(enemyLevel / 5);

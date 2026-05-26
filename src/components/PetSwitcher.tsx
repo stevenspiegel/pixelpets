@@ -12,6 +12,7 @@ type Props = {
   onSwitch: (id: string) => void;
   onAddNew: () => void;
   maxPets: number;
+  eggCost: number;
 };
 
 const RARITY_COLOR: Record<Rarity, string> = {
@@ -35,6 +36,7 @@ export const PetSwitcher: React.FC<Props> = ({
   onSwitch,
   onAddNew,
   maxPets,
+  eggCost,
 }) => {
   const canAdd = pets.length < maxPets;
   return (
@@ -87,7 +89,7 @@ export const PetSwitcher: React.FC<Props> = ({
           ]}
         >
           <Text style={styles.plus}>+</Text>
-          <Text style={styles.name}>NEW</Text>
+          <Text style={styles.name}>✦ {eggCost}</Text>
         </Pressable>
       )}
     </View>

@@ -408,7 +408,10 @@ export type Wallet = {
 // Tokens earned per successful PLAY, and the daily earning cap.
 export const PLAY_REWARD = 3;
 export const DAILY_EARN_CAP = 60;
-const STARTING_TOKENS = 25; // small welcome balance so training is tryable
+// Hatching an egg costs tokens. Eggs are meant to be a real investment you
+// save up for; new accounts start with exactly one egg's worth.
+export const EGG_COST = 150;
+const STARTING_TOKENS = EGG_COST;
 
 // How much one training step raises each base stat.
 export const STAT_INCREMENT: Record<StatKey, number> = {
@@ -723,8 +726,14 @@ export const usePet = (userId: string | null) => {
     if (!userRef.current) return;
     setCol((c) => {
       if (c.pets.length >= MAX_PETS) return c;
+      if (c.wallet.tokens < EGG_COST) return c;
       const pet = createPet(name);
-      return { ...c, pets: [...c.pets, pet], activeId: pet.id };
+      return {
+        ...c,
+        pets: [...c.pets, pet],
+        activeId: pet.id,
+        wallet: { ...c.wallet, tokens: c.wallet.tokens - EGG_COST },
+      };
     });
   }, []);
 
