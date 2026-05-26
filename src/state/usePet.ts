@@ -85,6 +85,7 @@ const RARITY_ORDER: readonly Rarity[] = ['common', 'uncommon', 'rare', 'epic', '
 // at hatch instead of a random roll. Easter eggs.
 const SPECIAL_NAMES: Record<string, { species: string; rarity: Rarity }> = {
   spyro: { species: DRAGON_SPECIES, rarity: 'legendary' },
+  moonbeam: { species: UNICORN_SPECIES, rarity: 'legendary' },
 };
 
 const rollSpecies = (name?: string): { species: string; rarity: Rarity } => {
