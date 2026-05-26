@@ -690,3 +690,99 @@ grant update (
   name, hunger, happiness, cleanliness, energy, health, age, stage,
   last_tick, asleep, poops, sick
 ) on public.pets to authenticated;
+
+-- ── Server-authoritative battles (anti-cheat, step 3) ─────────────────────────
+-- The client used to simulate the fight and merely claim a win, so wins (and the
+-- token reward + PvP record) were forgeable. resolve_battle now decides the
+-- outcome SERVER-SIDE from authoritative stats: it builds/loads the opponent,
+-- compares effective power with a clamped upset chance, credits the reward, and
+-- records the PvP result — all atomically. The client only animates the result.
+-- Effective-stat math mirrors battleStats() and the PvE scaling mirrors
+-- generateOpponent() in the client; keep them in sync.
+create or replace function public.resolve_battle(p_mode text, p_pet_id text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me   uuid := auth.uid();
+  pet  public.pets%rowtype;
+  opp  public.pets%rowtype;
+  opp_user text;
+  plvl int; pgrow double precision; pasc double precision;
+  patk int; pdef int; pspd int; php int;
+  elvl int; egrow double precision; easc double precision;
+  eatk int; edef int; espd int; ehp int;
+  e_species text; e_rarity text; e_name text := ''; e_adj text := '';
+  e_stage text := 'adult'; e_ascb boolean := false;
+  ppow double precision; epow double precision; prob double precision;
+  won boolean; reward int := 0; bal int;
+  adjs text[] := array['Wild','Feral','Rival','Rogue','Fierce','Ancient'];
+  opps text[] := array['🦊','🐅','🦈','🐉','🦉','🐍','🦫','🦒','🐊','🦝','🦏','🐘'];
+begin
+  select * into pet from public.pets where id = p_pet_id and owner = me;
+  if pet.id is null then raise exception 'That pet is not yours'; end if;
+  if pet.stage in ('egg', 'dead') then raise exception 'This pet cannot battle'; end if;
+
+  plvl := least(50, greatest(1, coalesce(pet.level, 1)));
+  pgrow := 1 + (plvl - 1) * 0.05;
+  pasc := case when coalesce(pet.ascended, false) then 1.5 else 1.0 end;
+  patk := round((pet.stats->>'attack')::numeric  * pgrow * pasc);
+  pdef := round((pet.stats->>'defense')::numeric * pgrow * pasc);
+  pspd := round((pet.stats->>'speed')::numeric   * pgrow * pasc);
+  php  := round((pet.stats->>'maxHp')::numeric    * pgrow * pasc);
+
+  if p_mode = 'pvp' then
+    select * into opp from public.pets
+      where owner <> me and stage <> 'egg' and stage <> 'dead'
+      order by random() limit 1;
+    if opp.id is null then return jsonb_build_object('empty', true); end if;
+    select username into opp_user from public.profiles where id = opp.owner;
+    elvl := least(50, greatest(1, coalesce(opp.level, 1)));
+    egrow := 1 + (elvl - 1) * 0.05;
+    easc := case when coalesce(opp.ascended, false) then 1.5 else 1.0 end;
+    eatk := round((opp.stats->>'attack')::numeric  * egrow * easc);
+    edef := round((opp.stats->>'defense')::numeric * egrow * easc);
+    espd := round((opp.stats->>'speed')::numeric   * egrow * easc);
+    ehp  := round((opp.stats->>'maxHp')::numeric    * egrow * easc);
+    e_species := opp.species; e_rarity := opp.rarity; e_stage := opp.stage;
+    e_ascb := coalesce(opp.ascended, false);
+    e_name := opp.name || ' (@' || coalesce(opp_user, 'rival') || ')';
+  else
+    -- PvE: scale to the player with jitter, mirroring generateOpponent().
+    eatk := greatest(1,  round(patk * (0.8  + random() * 0.35)));
+    edef := greatest(1,  round(pdef * (0.8  + random() * 0.35)));
+    espd := greatest(1,  round(pspd * (0.8  + random() * 0.35)));
+    ehp  := greatest(10, round(php  * (0.85 + random() * 0.3)));
+    elvl := plvl;
+    e_species := opps[1 + floor(random() * array_length(opps, 1))::int];
+    e_rarity := 'common';
+    e_adj := adjs[1 + floor(random() * array_length(adjs, 1))::int];
+  end if;
+
+  ppow := patk + pdef + pspd + php / 4.0;
+  epow := eatk + edef + espd + ehp / 4.0;
+  prob := least(0.9, greatest(0.1, ppow / (ppow + epow)));
+  won := random() < prob;
+
+  if won then
+    reward := 5 + (elvl / 5);                                   -- battleReward()
+    update public.profiles set tokens = tokens + reward where id = me;
+  end if;
+  select tokens into bal from public.profiles where id = me;
+
+  if p_mode = 'pvp' then
+    update public.profiles
+      set pvp_wins   = pvp_wins   + (case when won then 1 else 0 end),
+          pvp_losses = pvp_losses + (case when won then 0 else 1 end)
+      where id = me;
+  end if;
+
+  return jsonb_build_object(
+    'won', won, 'reward', reward, 'tokens', bal,
+    'enemy', jsonb_build_object(
+      'name', e_name, 'adjective', e_adj, 'species', e_species,
+      'rarity', e_rarity, 'stage', e_stage, 'ascended', e_ascb, 'level', elvl,
+      'attack', eatk, 'defense', edef, 'speed', espd, 'maxHp', ehp
+    )
+  );
+end; $$;
+grant execute on function public.resolve_battle(text, text) to authenticated;

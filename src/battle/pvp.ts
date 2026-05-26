@@ -1,4 +1,4 @@
-import { PetState } from '../types';
+import { PetState, Rarity, LifeStage } from '../types';
 import { supabase } from '../lib/supabase';
 import { Combatant } from './engine';
 import { playerCombatant } from './opponent';
@@ -53,6 +53,59 @@ export const recordPvpResult = async (won: boolean): Promise<void> => {
   const { error } = await supabase.rpc('record_pvp_result', { won });
   if (error) console.warn('[pixelpets] record pvp result error:', error.message);
 };
+
+// ── Server-resolved battles (step 3) ──────────────────────────────────────────
+export type BattleEnemy = {
+  name: string;
+  adjective: string;
+  species: string;
+  rarity: Rarity;
+  stage: LifeStage;
+  ascended: boolean;
+  level: number;
+  attack: number;
+  defense: number;
+  speed: number;
+  maxHp: number;
+};
+
+export type BattleOutcome =
+  | { empty: true }
+  | { won: boolean; reward: number; tokens: number; enemy: BattleEnemy };
+
+// Ask the server to resolve a battle. It decides the outcome from authoritative
+// stats, credits the reward, and records the PvP result; we just animate it.
+export const resolveBattle = async (
+  mode: 'pve' | 'pvp',
+  petId: string
+): Promise<BattleOutcome | null> => {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc('resolve_battle', {
+    p_mode: mode,
+    p_pet_id: petId,
+  });
+  if (error) {
+    console.warn('[pixelpets] resolve battle error:', error.message);
+    return null;
+  }
+  return data as BattleOutcome;
+};
+
+// Build a display Combatant from a server BattleEnemy.
+export const enemyCombatant = (e: BattleEnemy): Combatant => ({
+  name: e.name || `${e.adjective} ${speciesName(e.species)}`,
+  species: e.species,
+  stage: e.stage,
+  rarity: e.rarity,
+  ascended: e.ascended,
+  level: e.level,
+  attack: e.attack,
+  defense: e.defense,
+  speed: e.speed,
+  maxHp: e.maxHp,
+  hp: e.maxHp,
+  guarding: false,
+});
 
 export type LeaderRow = { username: string; wins: number; losses: number };
 

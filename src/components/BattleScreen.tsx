@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { PetState } from '../types';
+import { isSupabaseConfigured } from '../lib/supabase';
 import {
   BattleState,
   Move,
@@ -9,16 +10,29 @@ import {
   Combatant,
 } from '../battle/engine';
 import { generateOpponent, playerCombatant, battleReward } from '../battle/opponent';
-import { fetchPvpOpponent } from '../battle/pvp';
+import {
+  fetchPvpOpponent,
+  resolveBattle,
+  enemyCombatant,
+  BattleOutcome,
+} from '../battle/pvp';
 import { CreatureSprite } from './CreatureSprite';
 
 type Props = {
   pet: PetState;
   mode?: 'pve' | 'pvp';
+  // Local mode (no cloud): the client engine credits the reward / records PvP.
   onReward: (amount: number, enemyLevel: number) => void;
   onResult?: (won: boolean) => void;
+  // Cloud mode: the server already credited tokens; sync the new balance.
+  onWalletChange?: (tokens: number) => void;
   onExit: () => void;
 };
+
+// Cloud delegates to the server-resolved flow; local keeps the interactive
+// turn-based engine (which is fine offline because there's nothing to cheat).
+export const BattleScreen: React.FC<Props> = (props) =>
+  isSupabaseConfigured ? <ServerBattle {...props} /> : <LocalBattle {...props} />;
 
 const newBattle = (pet: PetState, enemy: Combatant, intro: string): BattleState => ({
   player: playerCombatant(pet),
@@ -49,7 +63,7 @@ const HpBar: React.FC<{ c: BattleState['player'] }> = ({ c }) => {
   );
 };
 
-export const BattleScreen: React.FC<Props> = ({
+const LocalBattle: React.FC<Props> = ({
   pet,
   mode = 'pve',
   onReward,
@@ -210,6 +224,192 @@ export const BattleScreen: React.FC<Props> = ({
               <Text style={styles.againText}>{isPvp ? 'NEW OPPONENT' : 'BATTLE AGAIN'}</Text>
             </Pressable>
             <Pressable onPress={onExit} style={({ pressed }) => [styles.doneBtn, pressed && styles.moveBtnPressed]}>
+              <Text style={styles.doneText}>DONE</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+    </ScrollView>
+  );
+};
+
+// Cloud: the server decides the outcome; we play a short animation toward it.
+const ServerBattle: React.FC<Props> = ({
+  pet,
+  mode = 'pve',
+  onWalletChange,
+  onExit,
+}) => {
+  const isPvp = mode === 'pvp';
+  const [phase, setPhase] = useState<'loading' | 'animating' | 'done' | 'empty'>(
+    'loading'
+  );
+  const [enemy, setEnemy] = useState<Combatant | null>(null);
+  const [player, setPlayer] = useState<Combatant | null>(null);
+  const [pHp, setPHp] = useState(0);
+  const [eHp, setEHp] = useState(0);
+  const [outcome, setOutcome] = useState<{ won: boolean; reward: number } | null>(
+    null
+  );
+  const [logLine, setLogLine] = useState('');
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearTimers = useCallback(() => {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+  }, []);
+
+  const startBattle = useCallback(async () => {
+    clearTimers();
+    setPhase('loading');
+    setEnemy(null);
+    setOutcome(null);
+    setLogLine('');
+    const res: BattleOutcome | null = await resolveBattle(mode, pet.id);
+    if (!res || 'empty' in res) {
+      setPhase('empty');
+      return;
+    }
+    const e = enemyCombatant(res.enemy);
+    const p = playerCombatant(pet);
+    setEnemy(e);
+    setPlayer(p);
+    setPHp(p.maxHp);
+    setEHp(e.maxHp);
+    setOutcome({ won: res.won, reward: res.reward });
+    setLogLine(
+      isPvp ? `${e.name} accepts your challenge!` : 'A wild challenger appears!'
+    );
+    setPhase('animating');
+
+    // Animate a few exchanges toward the server's verdict.
+    const pFinal = res.won ? Math.round(p.maxHp * 0.45) : 0;
+    const eFinal = res.won ? 0 : Math.round(e.maxHp * 0.45);
+    const steps = 3;
+    for (let i = 1; i <= steps; i++) {
+      timers.current.push(
+        setTimeout(() => {
+          setPHp(Math.round(p.maxHp - (p.maxHp - pFinal) * (i / steps)));
+          setEHp(Math.round(e.maxHp - (e.maxHp - eFinal) * (i / steps)));
+          setLogLine(
+            i < steps
+              ? 'The battle rages…'
+              : res.won
+                ? 'Victory!'
+                : 'Your pet was defeated…'
+          );
+        }, i * 450)
+      );
+    }
+    timers.current.push(
+      setTimeout(() => {
+        setPhase('done');
+        onWalletChange?.(res.tokens);
+      }, steps * 450 + 200)
+    );
+  }, [mode, pet, isPvp, onWalletChange, clearTimers]);
+
+  useEffect(() => {
+    startBattle();
+    return clearTimers;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const title = isPvp ? '⚔️ PvP' : '⚔️ BATTLE';
+
+  if (phase === 'loading') {
+    return (
+      <View style={styles.centerScreen}>
+        <Text style={styles.title}>{title}</Text>
+        <ActivityIndicator color="#fff" style={{ marginTop: 20 }} />
+        <Text style={styles.loadingText}>Finding an opponent…</Text>
+        <Pressable onPress={onExit} style={styles.doneBtn}>
+          <Text style={styles.doneText}>CANCEL</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (phase === 'empty' || !enemy || !player) {
+    return (
+      <View style={styles.centerScreen}>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.loadingText}>
+          No opponents available yet.{'\n'}Invite a friend to raise a pet!
+        </Text>
+        <Pressable onPress={onExit} style={styles.doneBtn}>
+          <Text style={styles.doneText}>BACK</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const done = phase === 'done';
+
+  return (
+    <ScrollView contentContainerStyle={styles.scroll}>
+      <View style={styles.topBar}>
+        <Text style={styles.title}>{title}</Text>
+        <Pressable onPress={onExit} hitSlop={8}>
+          <Text style={styles.exit}>EXIT</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.arena}>
+        <HpBar c={{ ...enemy, hp: eHp }} />
+        <View style={styles.enemySprite}>
+          <CreatureSprite
+            species={enemy.species}
+            stage={enemy.stage}
+            ascended={enemy.ascended}
+            size={120}
+          />
+        </View>
+
+        <Text style={styles.vs}>VS</Text>
+
+        <View style={styles.playerSprite}>
+          <CreatureSprite
+            species={player.species}
+            stage={player.stage}
+            ascended={player.ascended}
+            size={130}
+          />
+        </View>
+        <HpBar c={{ ...player, hp: pHp }} />
+      </View>
+
+      <View style={styles.logBox}>
+        <Text style={styles.logLine}>{logLine}</Text>
+      </View>
+
+      {!done ? (
+        <View style={styles.resultBox}>
+          <ActivityIndicator color="#fff" style={{ marginTop: 16 }} />
+        </View>
+      ) : (
+        <View style={styles.resultBox}>
+          <Text
+            style={[styles.resultText, outcome?.won ? styles.win : styles.lose]}
+          >
+            {outcome?.won ? 'VICTORY!' : 'DEFEATED…'}
+          </Text>
+          {outcome?.won && (
+            <Text style={styles.rewardText}>+✦ {outcome.reward} Pixel tokens</Text>
+          )}
+          <View style={styles.resultButtons}>
+            <Pressable
+              onPress={startBattle}
+              style={({ pressed }) => [styles.againBtn, pressed && styles.moveBtnPressed]}
+            >
+              <Text style={styles.againText}>
+                {isPvp ? 'NEW OPPONENT' : 'BATTLE AGAIN'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={onExit}
+              style={({ pressed }) => [styles.doneBtn, pressed && styles.moveBtnPressed]}
+            >
               <Text style={styles.doneText}>DONE</Text>
             </Pressable>
           </View>

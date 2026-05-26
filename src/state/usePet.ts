@@ -886,15 +886,10 @@ export const usePet = (userId: string | null) => {
     }));
   }, []);
 
-  // Cloud battle reward: the server computes the amount from the enemy level.
-  const claimBattleReward = useCallback(async (enemyLevel: number) => {
-    if (!isSupabaseConfigured) return;
-    const { data, error } = await supabase!.rpc('claim_battle_reward', {
-      p_enemy_level: enemyLevel,
-    });
-    if (!error && data != null) {
-      setCol((c) => ({ ...c, wallet: { ...c.wallet, tokens: Number(data) } }));
-    }
+  // Sync the wallet to an authoritative balance returned by a server RPC
+  // (e.g. resolve_battle). Display-only; the sync no longer writes tokens.
+  const setWalletTokens = useCallback((tokens: number) => {
+    setCol((c) => ({ ...c, wallet: { ...c.wallet, tokens } }));
   }, []);
 
   const renamePet = useCallback((id: string, name: string) => {
@@ -977,7 +972,7 @@ export const usePet = (userId: string | null) => {
     renamePet,
     trainStat,
     grantTokens,
-    claimBattleReward,
+    setWalletTokens,
     reloadCollection,
     importablePetsCount: importable?.pets.length ?? 0,
     scanLocalPets,
