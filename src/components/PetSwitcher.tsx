@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet, Image } from 'react-native';
 import { PetState, Rarity } from '../types';
 import { SPRITES, hasSprite } from '../sprites';
 import { imageSpriteFor } from '../sprites/images';
+import { effectiveRarity } from '../state/usePet';
 import { PixelArt } from './PixelArt';
 
 type Props = {
@@ -19,6 +20,7 @@ const RARITY_COLOR: Record<Rarity, string> = {
   rare: '#5fc0ff',
   epic: '#cc7fff',
   legendary: '#ffd24d',
+  mythical: '#ff7af0',
 };
 
 const tileEmoji = (pet: PetState): string => {
@@ -39,7 +41,7 @@ export const PetSwitcher: React.FC<Props> = ({
     <View style={styles.wrap}>
       {pets.map((pet) => {
         const active = pet.id === activeId;
-        const color = RARITY_COLOR[pet.rarity];
+        const color = RARITY_COLOR[effectiveRarity(pet)];
         return (
           <Pressable
             key={pet.id}

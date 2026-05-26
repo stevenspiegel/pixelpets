@@ -223,7 +223,7 @@ const FriendProfile: React.FC<{
                 <Text style={styles.petKind}>
                   LV {stats.level} · {speciesName(fp.species)}
                 </Text>
-                <RarityBadge rarity={fp.rarity} />
+                <RarityBadge rarity={fp.ascended ? 'mythical' : fp.rarity} />
               </View>
             );
           })}

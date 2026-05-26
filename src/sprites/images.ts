@@ -4,7 +4,7 @@ import { LifeStage } from '../types';
 // Image-based sprites take priority over the pixel-art grid in ./index.ts.
 // Each species maps life stages to bundled PNGs; a stage may be omitted, in
 // which case rendering falls back to the grid sprite (or emoji). The special
-// 'ascended' key is the dragon's post-adult ascended form.
+// 'ascended' key is the post-adult ascended form (dragon, unicorn).
 type SpriteKey = LifeStage | 'ascended';
 type StageImages = Partial<Record<SpriteKey, ImageSourcePropType>>;
 
@@ -57,6 +57,13 @@ export const IMAGE_SPRITES: Record<string, StageImages> = {
     child: require('../../assets/sprites/rabbit-child.png'),
     teen: require('../../assets/sprites/rabbit-teen.png'),
     adult: require('../../assets/sprites/rabbit-adult.png'),
+  },
+  '🦄': {
+    baby: require('../../assets/sprites/unicorn-baby.png'),
+    child: require('../../assets/sprites/unicorn-child.png'),
+    teen: require('../../assets/sprites/unicorn-teen.png'),
+    adult: require('../../assets/sprites/unicorn-adult.png'),
+    ascended: require('../../assets/sprites/unicorn-ascended.png'),
   },
 };
 

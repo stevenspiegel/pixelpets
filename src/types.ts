@@ -1,6 +1,6 @@
 export type LifeStage = 'egg' | 'baby' | 'child' | 'teen' | 'adult' | 'dead';
 
-export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythical';
 
 // Persistent base combat stats, rolled at hatch. A future battle system can
 // read these directly or scale them by level (see battleStats in usePet).
@@ -32,7 +32,8 @@ export type PetState = {
   asleep: boolean;
   poops: number;
   sick: boolean;
-  // Dragons can ascend once they reach the adult stage. Terminal, one-way.
+  // Dragons and unicorns can ascend once adult. Terminal, one-way; an
+  // ascended pet is shown as mythical (see effectiveRarity).
   ascended?: boolean;
 };
 
@@ -46,3 +47,4 @@ export type ActionKind =
   | 'ascend';
 
 export const DRAGON_SPECIES = '🐉';
+export const UNICORN_SPECIES = '🦄';

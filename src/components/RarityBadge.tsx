@@ -12,15 +12,22 @@ const RARITY_COLORS: Record<Rarity, { bg: string; border: string; text: string }
   rare:      { bg: '#1f3a6a', border: '#5fc0ff', text: '#cfe9ff' },
   epic:      { bg: '#4a1f6a', border: '#cc7fff', text: '#eed4ff' },
   legendary: { bg: '#6a4a0a', border: '#ffd24d', text: '#ffe9a0' },
+  mythical:  { bg: '#5a0a4a', border: '#ff7af0', text: '#ffd6fb' },
+};
+
+const ORNAMENT: Partial<Record<Rarity, string>> = {
+  legendary: '★',
+  mythical: '✦',
 };
 
 export const RarityBadge: React.FC<Props> = ({ rarity }) => {
   const color = RARITY_COLORS[rarity];
+  const ornament = ORNAMENT[rarity];
   return (
     <View style={[styles.wrap, { backgroundColor: color.bg, borderColor: color.border }]}>
-      {rarity === 'legendary' && <Text style={[styles.text, { color: color.text }]}>★ </Text>}
+      {ornament && <Text style={[styles.text, { color: color.text }]}>{ornament} </Text>}
       <Text style={[styles.text, { color: color.text }]}>{rarity.toUpperCase()}</Text>
-      {rarity === 'legendary' && <Text style={[styles.text, { color: color.text }]}> ★</Text>}
+      {ornament && <Text style={[styles.text, { color: color.text }]}> {ornament}</Text>}
     </View>
   );
 };
