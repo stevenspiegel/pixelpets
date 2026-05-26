@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Combatant } from './engine';
 import { playerCombatant } from './opponent';
 import { speciesName } from '../state/usePet';
+import { Tactic } from './tactics';
 
 // Build a battle Combatant from a random opponent row returned by the
 // get_random_opponent RPC, reusing the same effective-stat scaling as the
@@ -71,18 +72,28 @@ export type BattleEnemy = {
 
 export type BattleOutcome =
   | { empty: true }
-  | { won: boolean; reward: number; tokens: number; enemy: BattleEnemy };
+  | {
+      won: boolean;
+      reward: number;
+      tokens: number;
+      tactic: Tactic;
+      enemyTactic: Tactic;
+      enemy: BattleEnemy;
+    };
 
 // Ask the server to resolve a battle. It decides the outcome from authoritative
-// stats, credits the reward, and records the PvP result; we just animate it.
+// stats (factoring in the chosen tactic), credits the reward, and records the
+// PvP result; we just animate it.
 export const resolveBattle = async (
   mode: 'pve' | 'pvp',
-  petId: string
+  petId: string,
+  tactic: Tactic
 ): Promise<BattleOutcome | null> => {
   if (!supabase) return null;
   const { data, error } = await supabase.rpc('resolve_battle', {
     p_mode: mode,
     p_pet_id: petId,
+    p_tactic: tactic,
   });
   if (error) {
     console.warn('[pixelpets] resolve battle error:', error.message);

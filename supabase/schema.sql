@@ -699,7 +699,8 @@ grant update (
 -- records the PvP result — all atomically. The client only animates the result.
 -- Effective-stat math mirrors battleStats() and the PvE scaling mirrors
 -- generateOpponent() in the client; keep them in sync.
-create or replace function public.resolve_battle(p_mode text, p_pet_id text)
+drop function if exists public.resolve_battle(text, text);
+create or replace function public.resolve_battle(p_mode text, p_pet_id text, p_tactic text)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -707,6 +708,7 @@ declare
   pet  public.pets%rowtype;
   opp  public.pets%rowtype;
   opp_user text;
+  ptac text; etac text;
   plvl int; pgrow double precision; pasc double precision;
   patk int; pdef int; pspd int; php int;
   elvl int; egrow double precision; easc double precision;
@@ -721,6 +723,11 @@ begin
   select * into pet from public.pets where id = p_pet_id and owner = me;
   if pet.id is null then raise exception 'That pet is not yours'; end if;
   if pet.stage in ('egg', 'dead') then raise exception 'This pet cannot battle'; end if;
+
+  -- Player picks a tactic; the enemy's is rolled here so the choice is blind.
+  ptac := case when p_tactic in ('aggressive', 'balanced', 'defensive')
+               then p_tactic else 'balanced' end;
+  etac := (array['aggressive', 'balanced', 'defensive'])[1 + floor(random() * 3)::int];
 
   plvl := least(50, greatest(1, coalesce(pet.level, 1)));
   pgrow := 1 + (plvl - 1) * 0.05;
@@ -760,6 +767,18 @@ begin
 
   ppow := patk + pdef + pspd + php / 4.0;
   epow := eatk + edef + espd + ehp / 4.0;
+  -- Tactic RPS triangle (mirrors TACTICS in src/battle/tactics.ts):
+  -- aggressive ▶ balanced ▶ defensive ▶ aggressive. Winning the matchup
+  -- boosts the player's effective power; losing it cuts it.
+  if ptac <> etac then
+    if (ptac = 'aggressive' and etac = 'balanced')
+       or (ptac = 'balanced' and etac = 'defensive')
+       or (ptac = 'defensive' and etac = 'aggressive') then
+      ppow := ppow * 1.5;
+    else
+      ppow := ppow / 1.5;
+    end if;
+  end if;
   prob := least(0.9, greatest(0.1, ppow / (ppow + epow)));
   won := random() < prob;
 
@@ -778,6 +797,7 @@ begin
 
   return jsonb_build_object(
     'won', won, 'reward', reward, 'tokens', bal,
+    'tactic', ptac, 'enemyTactic', etac,
     'enemy', jsonb_build_object(
       'name', e_name, 'adjective', e_adj, 'species', e_species,
       'rarity', e_rarity, 'stage', e_stage, 'ascended', e_ascb, 'level', elvl,
@@ -785,4 +805,4 @@ begin
     )
   );
 end; $$;
-grant execute on function public.resolve_battle(text, text) to authenticated;
+grant execute on function public.resolve_battle(text, text, text) to authenticated;

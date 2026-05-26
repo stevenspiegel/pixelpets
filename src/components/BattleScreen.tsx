@@ -16,6 +16,7 @@ import {
   enemyCombatant,
   BattleOutcome,
 } from '../battle/pvp';
+import { Tactic, TACTICS, TACTIC_ORDER, tacticMatchup, Matchup } from '../battle/tactics';
 import { CreatureSprite } from './CreatureSprite';
 
 type Props = {
@@ -241,16 +242,20 @@ const ServerBattle: React.FC<Props> = ({
   onExit,
 }) => {
   const isPvp = mode === 'pvp';
-  const [phase, setPhase] = useState<'loading' | 'animating' | 'done' | 'empty'>(
-    'loading'
-  );
+  const [phase, setPhase] = useState<
+    'choosing' | 'loading' | 'animating' | 'done' | 'empty'
+  >('choosing');
   const [enemy, setEnemy] = useState<Combatant | null>(null);
   const [player, setPlayer] = useState<Combatant | null>(null);
   const [pHp, setPHp] = useState(0);
   const [eHp, setEHp] = useState(0);
-  const [outcome, setOutcome] = useState<{ won: boolean; reward: number } | null>(
-    null
-  );
+  const [outcome, setOutcome] = useState<{
+    won: boolean;
+    reward: number;
+    tactic: Tactic;
+    enemyTactic: Tactic;
+    matchup: Matchup;
+  } | null>(null);
   const [logLine, setLogLine] = useState('');
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -259,28 +264,49 @@ const ServerBattle: React.FC<Props> = ({
     timers.current = [];
   }, []);
 
-  const startBattle = useCallback(async () => {
+  const chooseAgain = useCallback(() => {
     clearTimers();
-    setPhase('loading');
     setEnemy(null);
     setOutcome(null);
     setLogLine('');
-    const res: BattleOutcome | null = await resolveBattle(mode, pet.id);
-    if (!res || 'empty' in res) {
-      setPhase('empty');
-      return;
-    }
-    const e = enemyCombatant(res.enemy);
-    const p = playerCombatant(pet);
-    setEnemy(e);
-    setPlayer(p);
-    setPHp(p.maxHp);
-    setEHp(e.maxHp);
-    setOutcome({ won: res.won, reward: res.reward });
-    setLogLine(
-      isPvp ? `${e.name} accepts your challenge!` : 'A wild challenger appears!'
-    );
-    setPhase('animating');
+    setPhase('choosing');
+  }, [clearTimers]);
+
+  const startBattle = useCallback(
+    async (tactic: Tactic) => {
+      clearTimers();
+      setPhase('loading');
+      setEnemy(null);
+      setOutcome(null);
+      setLogLine('');
+      const res: BattleOutcome | null = await resolveBattle(mode, pet.id, tactic);
+      if (!res || 'empty' in res) {
+        setPhase('empty');
+        return;
+      }
+      const e = enemyCombatant(res.enemy);
+      const p = playerCombatant(pet);
+      const matchup = tacticMatchup(res.tactic, res.enemyTactic);
+      setEnemy(e);
+      setPlayer(p);
+      setPHp(p.maxHp);
+      setEHp(e.maxHp);
+      setOutcome({
+        won: res.won,
+        reward: res.reward,
+        tactic: res.tactic,
+        enemyTactic: res.enemyTactic,
+        matchup,
+      });
+      setLogLine(
+        `You went ${TACTICS[res.tactic].label}; foe went ${TACTICS[res.enemyTactic].label}` +
+          (matchup === 'advantage'
+            ? ' — you have the edge!'
+            : matchup === 'disadvantage'
+              ? ' — they have the edge!'
+              : ' — evenly matched!')
+      );
+      setPhase('animating');
 
     // Animate a few exchanges toward the server's verdict. The loser drops to
     // 0; the winner's remaining HP reflects the power gap, so trouncing a much
@@ -314,15 +340,41 @@ const ServerBattle: React.FC<Props> = ({
         onWalletChange?.(res.tokens);
       }, steps * 450 + 200)
     );
-  }, [mode, pet, isPvp, onWalletChange, clearTimers]);
+  }, [mode, pet, onWalletChange, clearTimers]);
 
-  useEffect(() => {
-    startBattle();
-    return clearTimers;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => clearTimers, [clearTimers]);
 
   const title = isPvp ? '⚔️ PvP' : '⚔️ BATTLE';
+
+  if (phase === 'choosing') {
+    return (
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.topBar}>
+          <Text style={styles.title}>{title}</Text>
+          <Pressable onPress={onExit} hitSlop={8}>
+            <Text style={styles.exit}>EXIT</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.chooseTitle}>CHOOSE YOUR TACTIC</Text>
+        <Text style={styles.chooseHint}>
+          Your foe picks blindly too.{'\n'}Win the matchup for an edge in battle.
+        </Text>
+        <View style={styles.tactics}>
+          {TACTIC_ORDER.map((t) => (
+            <Pressable
+              key={t}
+              onPress={() => startBattle(t)}
+              style={({ pressed }) => [styles.tacticBtn, pressed && styles.moveBtnPressed]}
+            >
+              <Text style={styles.tacticIcon}>{TACTICS[t].icon}</Text>
+              <Text style={styles.tacticLabel}>{TACTICS[t].label.toUpperCase()}</Text>
+              <Text style={styles.tacticSub}>{TACTICS[t].hint}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </ScrollView>
+    );
+  }
 
   if (phase === 'loading') {
     return (
@@ -401,12 +453,23 @@ const ServerBattle: React.FC<Props> = ({
           >
             {outcome?.won ? 'VICTORY!' : 'DEFEATED…'}
           </Text>
+          {outcome && (
+            <Text style={styles.matchupText}>
+              {TACTICS[outcome.tactic].icon} {TACTICS[outcome.tactic].label} vs{' '}
+              {TACTICS[outcome.enemyTactic].icon} {TACTICS[outcome.enemyTactic].label}
+              {outcome.matchup === 'advantage'
+                ? '  (edge: you)'
+                : outcome.matchup === 'disadvantage'
+                  ? '  (edge: foe)'
+                  : '  (even)'}
+            </Text>
+          )}
           {outcome?.won && (
             <Text style={styles.rewardText}>+✦ {outcome.reward} Pixel tokens</Text>
           )}
           <View style={styles.resultButtons}>
             <Pressable
-              onPress={startBattle}
+              onPress={chooseAgain}
               style={({ pressed }) => [styles.againBtn, pressed && styles.moveBtnPressed]}
             >
               <Text style={styles.againText}>
@@ -446,6 +509,62 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 24,
     lineHeight: 20,
+  },
+  chooseTitle: {
+    color: '#fff',
+    fontFamily: 'Courier',
+    fontSize: 15,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+    marginTop: 24,
+  },
+  chooseHint: {
+    color: '#d6c8ff',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+    lineHeight: 18,
+  },
+  tactics: {
+    width: '100%',
+    maxWidth: 380,
+  },
+  tacticBtn: {
+    backgroundColor: '#3a2070',
+    borderWidth: 3,
+    borderColor: '#7a4ed0',
+    borderRadius: 4,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  tacticIcon: {
+    fontSize: 28,
+  },
+  tacticLabel: {
+    color: '#fff',
+    fontFamily: 'Courier',
+    fontSize: 14,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+    marginTop: 4,
+  },
+  tacticSub: {
+    color: '#bfa8f0',
+    fontFamily: 'Courier',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  matchupText: {
+    color: '#d6c8ff',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 8,
   },
   topBar: {
     width: '100%',
