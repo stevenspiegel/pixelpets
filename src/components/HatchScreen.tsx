@@ -18,6 +18,7 @@ type Props = {
   cost: number;
   onCancel?: () => void;
   onRestore?: () => void;
+  onMarketplace?: () => void;
 };
 
 export const HatchScreen: React.FC<Props> = ({
@@ -28,6 +29,7 @@ export const HatchScreen: React.FC<Props> = ({
   cost,
   onCancel,
   onRestore,
+  onMarketplace,
 }) => {
   const [name, setName] = useState('');
   const affordable = tokens >= cost;
@@ -81,8 +83,14 @@ export const HatchScreen: React.FC<Props> = ({
       </Pressable>
       {!affordable && (
         <Text style={styles.hint}>
-          Not enough tokens — win battles and play to earn more!
+          Not enough tokens — win battles and play to earn more, or adopt a pet
+          from the marketplace!
         </Text>
+      )}
+      {onMarketplace && (
+        <Pressable onPress={onMarketplace} style={styles.cancel} hitSlop={8}>
+          <Text style={styles.cancelText}>🛒 adopt from the marketplace</Text>
+        </Pressable>
       )}
       {onCancel && (
         <Pressable onPress={onCancel} style={styles.cancel} hitSlop={8}>
