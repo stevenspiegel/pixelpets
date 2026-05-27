@@ -1061,6 +1061,12 @@ create index if not exists push_subs_owner_idx on public.push_subscriptions (own
 
 alter table public.push_subscriptions enable row level security;
 grant select, delete on public.push_subscriptions to authenticated;
+-- The scheduled sender (scripts/send-push.mjs) runs as service_role: it bypasses
+-- RLS but still needs table privileges. Grant exactly what it touches — read
+-- subscriptions/pets, read+update profiles (dedupe state), delete dead subs.
+grant select, delete on public.push_subscriptions to service_role;
+grant select, update on public.profiles            to service_role;
+grant select          on public.pets               to service_role;
 drop policy if exists "push: own read"   on public.push_subscriptions;
 drop policy if exists "push: own delete" on public.push_subscriptions;
 create policy "push: own read"   on public.push_subscriptions for select using (auth.uid() = owner);
