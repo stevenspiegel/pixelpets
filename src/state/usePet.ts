@@ -602,8 +602,8 @@ const loadCloudCollection = async (): Promise<Collection> => {
   return { pets, activeId, wallet };
 };
 
-// Make the DB match the client collection: upsert current pets, delete any
-// rows that were removed, and update the profile (wallet + active pet).
+// Make the DB match the client collection: update each pet's care state,
+// delete any rows that were removed, and update the profile (active pet).
 const syncCloudCollection = async (col: Collection): Promise<void> => {
   if (!supabase) return;
   const { data: sess } = await supabase.auth.getSession();
@@ -611,8 +611,19 @@ const syncCloudCollection = async (col: Collection): Promise<void> => {
   if (!uid) return;
 
   if (col.pets.length > 0) {
-    const up = await supabase.from('pets').upsert(col.pets.map((p) => petCareRow(p)));
-    if (up.error) console.warn('[pixelpets] upsert pets error:', up.error.message);
+    // Pets are only ever created via RPC (hatch/adopt/import), so the client
+    // just UPDATEs care state of existing rows. An upsert would run the INSERT
+    // path, which fails the owner RLS check (petCareRow has no owner) and would
+    // silently leave the row frozen — including stage, blocking battles.
+    const updates = await Promise.all(
+      col.pets.map((p) => {
+        const { id, ...care } = petCareRow(p);
+        return supabase!.from('pets').update(care).eq('id', id).eq('owner', uid);
+      })
+    );
+    for (const u of updates) {
+      if (u.error) console.warn('[pixelpets] update pet error:', u.error.message);
+    }
     // ids are alphanumeric/underscore only, so an unquoted list is safe.
     const idList = col.pets.map((p) => p.id).join(',');
     const del = await supabase
