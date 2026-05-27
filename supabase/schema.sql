@@ -20,6 +20,11 @@ create table if not exists public.profiles (
   created_at    timestamptz not null default now()
 );
 
+-- `create table if not exists` never changes an existing table's column default,
+-- and the live table was first created with `default 25` — so set it explicitly
+-- here (idempotent) to fix new-signup starting tokens.
+alter table public.profiles alter column tokens set default 150;
+
 -- ── pets: mirrors the client PetState; one owner per pet ──────────────────────
 create table if not exists public.pets (
   id          text primary key,
@@ -83,10 +88,11 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.profiles (id, username)
+  insert into public.profiles (id, username, tokens)
   values (
     new.id,
-    coalesce(new.raw_user_meta_data ->> 'username', split_part(new.email, '@', 1))
+    coalesce(new.raw_user_meta_data ->> 'username', split_part(new.email, '@', 1)),
+    150  -- EGG_COST: enough to hatch the first egg
   )
   on conflict (id) do nothing;
   return new;
