@@ -124,7 +124,7 @@ export default function App() {
         onSkip={skipImport}
       />
     );
-  } else if (pets.length === 0 || addingNew) {
+  } else if ((pets.length === 0 || addingNew) && view !== 'marketplace') {
     screen = (
       <HatchScreen
         username={username}
@@ -134,6 +134,7 @@ export default function App() {
         cost={EGG_COST}
         onCancel={pets.length > 0 ? () => setAddingNew(false) : undefined}
         onRestore={pets.length === 0 ? onRestore : undefined}
+        onMarketplace={isSupabaseConfigured ? () => setView('marketplace') : undefined}
       />
     );
   } else if (activePet && (view === 'pve' || view === 'pvp')) {
@@ -155,11 +156,11 @@ export default function App() {
     screen = <DailyScreen onWalletChange={setWalletTokens} onExit={() => setView(null)} />;
   } else if (view === 'store' && username) {
     screen = <StoreScreen tokens={tokens} onExit={() => setView(null)} />;
-  } else if (view === 'marketplace' && username && activePet) {
+  } else if (view === 'marketplace' && username) {
     screen = (
       <MarketplaceScreen
         pets={pets}
-        activeId={activePet.id}
+        activeId={activePet ? activePet.id : null}
         tokens={tokens}
         username={username}
         onReload={reloadCollection}
