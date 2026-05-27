@@ -31,6 +31,7 @@ type Props = {
   onTrain: (stat: StatKey) => void;
   onBattle: () => void;
   onPvp?: () => void;
+  onDaily?: () => void;
   onLeaderboard?: () => void;
   onFriends?: () => void;
   onMarketplace?: () => void;
@@ -75,6 +76,7 @@ export const GameScreen: React.FC<Props> = ({
   onTrain,
   onBattle,
   onPvp,
+  onDaily,
   onLeaderboard,
   onFriends,
   onMarketplace,
@@ -305,6 +307,12 @@ export const GameScreen: React.FC<Props> = ({
         >
           <Text style={styles.battleText}>🤺 PvP BATTLE</Text>
           <Text style={styles.battleSub}>challenge another player's pet</Text>
+        </Pressable>
+      )}
+
+      {onDaily && (
+        <Pressable onPress={onDaily} style={styles.resetButton} hitSlop={8}>
+          <Text style={styles.resetText}>📅 daily quests</Text>
         </Pressable>
       )}
 

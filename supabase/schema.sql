@@ -105,6 +105,40 @@ create trigger on_auth_user_created
 alter table public.profiles add column if not exists pvp_wins   integer not null default 0;
 alter table public.profiles add column if not exists pvp_losses integer not null default 0;
 
+-- ── Daily quests + care streak ────────────────────────────────────────────────
+-- Per-day activity counters (reset when the UTC day rolls over) drive the daily
+-- quests; a streak rewards consecutive check-ins. Counters are bumped only from
+-- server-verified actions (earn_play_tokens / train_pet / battle_turn), so quest
+-- completion can't be forged. Reward amounts here mirror src/state/daily.ts.
+alter table public.profiles add column if not exists daily_date        text    not null default '';
+alter table public.profiles add column if not exists daily_played      integer not null default 0;
+alter table public.profiles add column if not exists daily_trained     integer not null default 0;
+alter table public.profiles add column if not exists daily_battles_won integer not null default 0;
+alter table public.profiles add column if not exists daily_claimed     text[]  not null default '{}';
+alter table public.profiles add column if not exists streak            integer not null default 0;
+alter table public.profiles add column if not exists streak_date       text    not null default '';
+
+-- Roll the day (reset counters when the UTC date changes) and increment one
+-- activity counter, in a single statement. INTERNAL ONLY — execute is revoked
+-- from clients so the per-action counters can't be inflated to forge quests.
+create or replace function public._daily_bump(p_field text)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare today text := to_char((now() at time zone 'utc'), 'YYYY-MM-DD');
+begin
+  update public.profiles set
+    daily_played      = (case when daily_date = today then daily_played      else 0 end)
+                        + (case when p_field = 'played'  then 1 else 0 end),
+    daily_trained     = (case when daily_date = today then daily_trained     else 0 end)
+                        + (case when p_field = 'trained' then 1 else 0 end),
+    daily_battles_won = (case when daily_date = today then daily_battles_won else 0 end)
+                        + (case when p_field = 'won'     then 1 else 0 end),
+    daily_claimed     = (case when daily_date = today then daily_claimed else '{}'::text[] end),
+    daily_date        = today
+  where id = auth.uid();
+end; $$;
+revoke execute on function public._daily_bump(text) from public, anon, authenticated;
+
 -- Return a random opponent pet that isn't the caller's. SECURITY DEFINER so it
 -- can read across users without exposing the whole pets table via RLS; it only
 -- returns battle-relevant fields plus the owner's username.
@@ -491,6 +525,7 @@ begin
   newlevel := least(cap, coalesce(pet.level, 1) + 1);
   update public.pets set stats = newstats, level = newlevel where id = p_pet_id;
   update public.profiles set tokens = tokens - cost where id = me;
+  perform public._daily_bump('trained');
   return jsonb_build_object('stats', newstats, 'level', newlevel, 'tokens', bal - cost);
 end; $$;
 grant execute on function public.train_pet(text, text) to authenticated;
@@ -514,6 +549,7 @@ begin
   update public.profiles
     set tokens = tokens + gain, earn_date = today, earned_today = used + gain
     where id = me;
+  perform public._daily_bump('played');
   return prof.tokens + gain;
 end; $$;
 grant execute on function public.earn_play_tokens() to authenticated;
@@ -903,6 +939,7 @@ begin
     if result = 'won' then
       reward := 5 + (b.e_level / 5);                              -- battleReward()
       update public.profiles set tokens = tokens + reward where id = me;
+      perform public._daily_bump('won');
     end if;
     if b.mode = 'pvp' then
       update public.profiles
@@ -926,3 +963,80 @@ begin
   );
 end; $$;
 grant execute on function public.battle_turn(uuid, text) to authenticated;
+
+-- ── Daily quests / streak RPCs ────────────────────────────────────────────────
+-- Read today's progress + claim state + streak. Rolls the day first so a fresh
+-- day shows zeroed counters even before any activity.
+create or replace function public.daily_status()
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  today text := to_char((now() at time zone 'utc'), 'YYYY-MM-DD');
+  prof  public.profiles%rowtype;
+begin
+  update public.profiles set
+    daily_played = 0, daily_trained = 0, daily_battles_won = 0,
+    daily_claimed = '{}'::text[], daily_date = today
+  where id = auth.uid() and daily_date <> today;
+  select * into prof from public.profiles where id = auth.uid();
+  return jsonb_build_object(
+    'date', today,
+    'played', prof.daily_played, 'trained', prof.daily_trained, 'won', prof.daily_battles_won,
+    'claimed', to_jsonb(prof.daily_claimed),
+    'streak', prof.streak, 'tokens', prof.tokens
+  );
+end; $$;
+grant execute on function public.daily_status() to authenticated;
+
+-- Claim a completed quest. The server verifies completion against the activity
+-- counters (which only server-verified actions bump), credits the reward once
+-- per day, and advances the streak on check-in. Reward amounts mirror daily.ts.
+create or replace function public.claim_quest(p_quest text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me     uuid := auth.uid();
+  today  text := to_char((now() at time zone 'utc'), 'YYYY-MM-DD');
+  yday   text := to_char((now() at time zone 'utc') - interval '1 day', 'YYYY-MM-DD');
+  prof   public.profiles%rowtype;
+  reward int := 0;
+  nstreak int;
+begin
+  update public.profiles set
+    daily_played = 0, daily_trained = 0, daily_battles_won = 0,
+    daily_claimed = '{}'::text[], daily_date = today
+  where id = me and daily_date <> today;
+
+  select * into prof from public.profiles where id = me for update;
+  if p_quest = any(prof.daily_claimed) then raise exception 'Already claimed today'; end if;
+
+  if p_quest = 'checkin' then
+    nstreak := case when prof.streak_date = today then prof.streak
+                    when prof.streak_date = yday  then prof.streak + 1
+                    else 1 end;
+    reward := 5 + least(nstreak, 7);                 -- streak bonus, capped
+    update public.profiles set streak = nstreak, streak_date = today where id = me;
+  elsif p_quest = 'play' then
+    if prof.daily_played < 1 then raise exception 'Quest not complete'; end if;
+    reward := 8;
+  elsif p_quest = 'train' then
+    if prof.daily_trained < 1 then raise exception 'Quest not complete'; end if;
+    reward := 8;
+  elsif p_quest = 'win' then
+    if prof.daily_battles_won < 1 then raise exception 'Quest not complete'; end if;
+    reward := 12;
+  else
+    raise exception 'Unknown quest';
+  end if;
+
+  update public.profiles
+    set tokens = tokens + reward,
+        daily_claimed = array_append(daily_claimed, p_quest)
+    where id = me;
+  select * into prof from public.profiles where id = me;
+  return jsonb_build_object(
+    'reward', reward, 'tokens', prof.tokens,
+    'streak', prof.streak, 'claimed', to_jsonb(prof.daily_claimed)
+  );
+end; $$;
+grant execute on function public.claim_quest(text) to authenticated;
