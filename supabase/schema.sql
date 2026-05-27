@@ -1040,3 +1040,48 @@ begin
   );
 end; $$;
 grant execute on function public.claim_quest(text) to authenticated;
+
+-- ── Web push notifications ────────────────────────────────────────────────────
+-- Browser push subscriptions (one row per device/browser). A scheduled GitHub
+-- Actions job reads these with the service role and sends reminders (streak
+-- expiry + pet care); the client saves/removes its own subscription via the
+-- RPCs below. Per-user dedupe state lives on profiles so someone with several
+-- devices is reminded once per event, not once per device.
+alter table public.profiles add column if not exists notif_streak_date text   not null default '';
+alter table public.profiles add column if not exists notif_care_at     bigint not null default 0;
+
+create table if not exists public.push_subscriptions (
+  endpoint   text primary key,
+  owner      uuid not null references public.profiles (id) on delete cascade,
+  p256dh     text not null,
+  auth       text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists push_subs_owner_idx on public.push_subscriptions (owner);
+
+alter table public.push_subscriptions enable row level security;
+grant select, delete on public.push_subscriptions to authenticated;
+drop policy if exists "push: own read"   on public.push_subscriptions;
+drop policy if exists "push: own delete" on public.push_subscriptions;
+create policy "push: own read"   on public.push_subscriptions for select using (auth.uid() = owner);
+create policy "push: own delete" on public.push_subscriptions for delete using (auth.uid() = owner);
+
+-- Upsert the caller's subscription (keyed by endpoint so re-subscribing is safe).
+create or replace function public.save_push_subscription(p_endpoint text, p_p256dh text, p_auth text)
+returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.push_subscriptions (endpoint, owner, p256dh, auth)
+  values (p_endpoint, auth.uid(), p_p256dh, p_auth)
+  on conflict (endpoint) do update
+    set owner = auth.uid(), p256dh = excluded.p256dh, auth = excluded.auth;
+end; $$;
+grant execute on function public.save_push_subscription(text, text, text) to authenticated;
+
+create or replace function public.delete_push_subscription(p_endpoint text)
+returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.push_subscriptions where endpoint = p_endpoint and owner = auth.uid();
+end; $$;
+grant execute on function public.delete_push_subscription(text) to authenticated;

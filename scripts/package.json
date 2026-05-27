@@ -1,0 +1,10 @@
+{
+  "name": "pixelpets-push-sender",
+  "private": true,
+  "type": "module",
+  "description": "Scheduled Web Push sender, run by the push-notify GitHub Action.",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.106.1",
+    "web-push": "^3.6.7"
+  }
+}

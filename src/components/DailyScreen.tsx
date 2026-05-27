@@ -10,6 +10,7 @@ import {
   questComplete,
   checkinReward,
 } from '../state/daily';
+import { PushState, getPushState, enablePush, disablePush } from '../state/push';
 
 type Props = {
   onWalletChange?: (tokens: number) => void;
@@ -21,6 +22,8 @@ export const DailyScreen: React.FC<Props> = ({ onWalletChange, onExit }) => {
   const [loading, setLoading] = useState(true);
   const [claiming, setClaiming] = useState<QuestId | null>(null);
   const [flash, setFlash] = useState('');
+  const [push, setPush] = useState<PushState>('unsupported');
+  const [pushBusy, setPushBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -31,7 +34,16 @@ export const DailyScreen: React.FC<Props> = ({ onWalletChange, onExit }) => {
 
   useEffect(() => {
     load();
+    getPushState().then(setPush);
   }, [load]);
+
+  const onTogglePush = useCallback(async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    const next = push === 'on' ? await disablePush() : await enablePush();
+    setPush(next);
+    setPushBusy(false);
+  }, [push, pushBusy]);
 
   const onClaim = useCallback(
     async (id: QuestId) => {
@@ -71,6 +83,29 @@ export const DailyScreen: React.FC<Props> = ({ onWalletChange, onExit }) => {
               day streak{'\n'}check in daily to keep it alive
             </Text>
           </View>
+
+          {push !== 'unsupported' && (
+            <Pressable
+              onPress={push === 'denied' ? undefined : onTogglePush}
+              disabled={push === 'denied' || pushBusy}
+              style={({ pressed }) => [styles.remindRow, pressed && push !== 'denied' && styles.claimPressed]}
+            >
+              <Text style={styles.remindLabel}>🔔 Reminders</Text>
+              {pushBusy ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text
+                  style={[
+                    styles.remindState,
+                    push === 'on' && styles.remindOn,
+                    push === 'denied' && styles.remindDenied,
+                  ]}
+                >
+                  {push === 'on' ? 'ON · tap to turn off' : push === 'denied' ? 'blocked in browser' : 'OFF · tap to enable'}
+                </Text>
+              )}
+            </Pressable>
+          )}
 
           {flash !== '' && <Text style={styles.flash}>{flash}</Text>}
 
@@ -149,6 +184,24 @@ const styles = StyleSheet.create({
   },
   streakNum: { color: '#ffd24d', fontFamily: 'Courier', fontSize: 30, fontWeight: 'bold', marginRight: 14 },
   streakLabel: { color: '#d6c8ff', fontFamily: 'Courier', fontSize: 12, lineHeight: 17, flexShrink: 1 },
+  remindRow: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#2a1a4a',
+    borderWidth: 2,
+    borderColor: '#7a4ed0',
+    borderRadius: 6,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  remindLabel: { color: '#fff', fontFamily: 'Courier', fontSize: 13, fontWeight: 'bold' },
+  remindState: { color: '#bfa8f0', fontFamily: 'Courier', fontSize: 11, fontWeight: 'bold' },
+  remindOn: { color: '#7fee7f' },
+  remindDenied: { color: '#ff8aa3' },
   flash: {
     color: '#ffe9a0',
     fontFamily: 'Courier',
