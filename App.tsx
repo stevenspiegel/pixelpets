@@ -21,6 +21,8 @@ import { LeaderboardScreen } from './src/components/LeaderboardScreen';
 import { FriendsScreen } from './src/components/FriendsScreen';
 import { DailyScreen } from './src/components/DailyScreen';
 import { MarketplaceScreen } from './src/components/MarketplaceScreen';
+import { StoreScreen } from './src/components/StoreScreen';
+import { purchasesAvailable } from './src/state/purchases';
 import { recordPvpResult } from './src/battle/pvp';
 
 const SKY = '#1565ad';
@@ -54,7 +56,7 @@ export default function App() {
   const [addingNew, setAddingNew] = useState(false);
   // null = game screen; 'pve'/'pvp' = battle; the rest are full-screen menus.
   const [view, setView] = useState<
-    null | 'pve' | 'pvp' | 'leaderboard' | 'friends' | 'marketplace' | 'daily'
+    null | 'pve' | 'pvp' | 'leaderboard' | 'friends' | 'marketplace' | 'daily' | 'store'
   >(null);
 
   // Whenever the user changes (login/logout), reset transient overlays.
@@ -62,6 +64,20 @@ export default function App() {
     setAddingNew(false);
     setView(null);
   }, [username]);
+
+  // Returning from Stripe Checkout (?purchase=success): the webhook credits
+  // tokens server-side, so re-pull the wallet (twice, to cover webhook lag).
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const result = new URLSearchParams(window.location.search).get('purchase');
+    if (!result) return;
+    window.history.replaceState({}, '', window.location.pathname);
+    if (result === 'success') {
+      reloadCollection();
+      const t = setTimeout(() => reloadCollection(), 3500);
+      return () => clearTimeout(t);
+    }
+  }, [reloadCollection]);
 
   const ready = authLoaded && (!username || petLoaded);
 
@@ -137,6 +153,8 @@ export default function App() {
     screen = <FriendsScreen onExit={() => setView(null)} />;
   } else if (view === 'daily' && username) {
     screen = <DailyScreen onWalletChange={setWalletTokens} onExit={() => setView(null)} />;
+  } else if (view === 'store' && username) {
+    screen = <StoreScreen tokens={tokens} onExit={() => setView(null)} />;
   } else if (view === 'marketplace' && username && activePet) {
     screen = (
       <MarketplaceScreen
@@ -163,6 +181,7 @@ export default function App() {
         onTrain={(stat) => trainStat(activePet.id, stat)}
         onBattle={() => setView('pve')}
         onPvp={isSupabaseConfigured ? () => setView('pvp') : undefined}
+        onStore={purchasesAvailable() ? () => setView('store') : undefined}
         onDaily={isSupabaseConfigured ? () => setView('daily') : undefined}
         onLeaderboard={isSupabaseConfigured ? () => setView('leaderboard') : undefined}
         onFriends={isSupabaseConfigured ? () => setView('friends') : undefined}

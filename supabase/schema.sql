@@ -1097,3 +1097,44 @@ begin
   delete from public.push_subscriptions where endpoint = p_endpoint and owner = auth.uid();
 end; $$;
 grant execute on function public.delete_push_subscription(text) to authenticated;
+
+-- ── Token purchases (Stripe) ──────────────────────────────────────────────────
+-- Real-money token bundles. The Stripe webhook Edge Function (stripe-webhook)
+-- calls record_purchase with the service role after a paid Checkout session.
+-- The purchases row is keyed by the Stripe session id, so retries can't double-
+-- credit. Clients may read their own purchase history but can NEVER credit
+-- tokens — record_purchase is execute-revoked from everyone except service_role.
+create table if not exists public.purchases (
+  id         text primary key,                 -- Stripe checkout session id
+  owner      uuid not null references public.profiles (id) on delete cascade,
+  bundle     text not null,
+  tokens     integer not null,
+  amount     integer not null,                 -- cents (USD)
+  created_at timestamptz not null default now()
+);
+create index if not exists purchases_owner_idx on public.purchases (owner);
+
+alter table public.purchases enable row level security;
+grant select on public.purchases to authenticated;
+grant select, insert on public.purchases to service_role;
+drop policy if exists "purchases: own read" on public.purchases;
+create policy "purchases: own read" on public.purchases for select using (auth.uid() = owner);
+
+-- Atomically record a paid purchase and credit its tokens — exactly once. The
+-- session id is the primary key, so a duplicate webhook delivery inserts nothing
+-- and FOUND is false, skipping the credit.
+create or replace function public.record_purchase(
+  p_session text, p_owner uuid, p_bundle text, p_tokens int, p_amount int
+)
+returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.purchases (id, owner, bundle, tokens, amount)
+  values (p_session, p_owner, p_bundle, p_tokens, p_amount)
+  on conflict (id) do nothing;
+  if found then
+    update public.profiles set tokens = tokens + p_tokens where id = p_owner;
+  end if;
+end; $$;
+revoke execute on function public.record_purchase(text, uuid, text, int, int) from public, anon, authenticated;
+grant execute on function public.record_purchase(text, uuid, text, int, int) to service_role;
