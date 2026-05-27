@@ -272,6 +272,9 @@ const ServerBattle: React.FC<Props> = ({
   const [outcome, setOutcome] = useState<{ won: boolean; reward: number } | null>(
     null
   );
+  // Non-empty reason shown on the end screen (egg, error, etc.). Empty string
+  // falls back to the default "no opponents" message.
+  const [notice, setNotice] = useState('');
 
   const begin = useCallback(async () => {
     setPhase('loading');
@@ -280,8 +283,34 @@ const ServerBattle: React.FC<Props> = ({
     setOutcome(null);
     setLogLine('');
     setBusy(false);
+    setNotice('');
+    // A freshly hatched pet is an egg for its first ~30s and can't battle yet;
+    // catch that locally so the player gets a clear message, not "no opponents".
+    if (pet.stage === 'egg' || pet.stage === 'dead') {
+      setNotice(
+        pet.stage === 'egg'
+          ? `${pet.name} is still an egg — let it hatch before it can battle!`
+          : `${pet.name} can’t battle right now.`
+      );
+      setPhase('empty');
+      return;
+    }
     const res = await startServerBattle(mode, pet.id);
-    if (!res || 'empty' in res) {
+    if (!res) {
+      setNotice('Couldn’t reach the arena — check your connection and try again.');
+      setPhase('empty');
+      return;
+    }
+    if ('error' in res) {
+      setNotice(
+        /cannot battle/i.test(res.error)
+          ? `${pet.name} isn’t ready to battle yet — try again in a moment.`
+          : res.error
+      );
+      setPhase('empty');
+      return;
+    }
+    if ('empty' in res) {
       setPhase('empty');
       return;
     }
@@ -295,7 +324,7 @@ const ServerBattle: React.FC<Props> = ({
       isPvp ? `${res.enemy.name} accepts your challenge!` : 'A wild challenger appears!'
     );
     setPhase('playing');
-  }, [mode, pet.id, isPvp]);
+  }, [mode, pet.id, pet.name, pet.stage, isPvp]);
 
   useEffect(() => {
     begin();
@@ -352,7 +381,7 @@ const ServerBattle: React.FC<Props> = ({
       <View style={styles.centerScreen}>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.loadingText}>
-          No opponents available yet.{'\n'}Invite a friend to raise a pet!
+          {notice || 'No opponents available yet.\nInvite a friend to raise a pet!'}
         </Text>
         <Pressable onPress={onExit} style={styles.doneBtn}>
           <Text style={styles.doneText}>BACK</Text>
