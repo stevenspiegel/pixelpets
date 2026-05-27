@@ -19,6 +19,7 @@ import { BattleScreen } from './src/components/BattleScreen';
 import { ImportScreen } from './src/components/ImportScreen';
 import { LeaderboardScreen } from './src/components/LeaderboardScreen';
 import { FriendsScreen } from './src/components/FriendsScreen';
+import { DailyScreen } from './src/components/DailyScreen';
 import { MarketplaceScreen } from './src/components/MarketplaceScreen';
 import { recordPvpResult } from './src/battle/pvp';
 
@@ -53,7 +54,7 @@ export default function App() {
   const [addingNew, setAddingNew] = useState(false);
   // null = game screen; 'pve'/'pvp' = battle; the rest are full-screen menus.
   const [view, setView] = useState<
-    null | 'pve' | 'pvp' | 'leaderboard' | 'friends' | 'marketplace'
+    null | 'pve' | 'pvp' | 'leaderboard' | 'friends' | 'marketplace' | 'daily'
   >(null);
 
   // Whenever the user changes (login/logout), reset transient overlays.
@@ -134,6 +135,8 @@ export default function App() {
     screen = <LeaderboardScreen username={username} onExit={() => setView(null)} />;
   } else if (view === 'friends' && username) {
     screen = <FriendsScreen onExit={() => setView(null)} />;
+  } else if (view === 'daily' && username) {
+    screen = <DailyScreen onWalletChange={setWalletTokens} onExit={() => setView(null)} />;
   } else if (view === 'marketplace' && username && activePet) {
     screen = (
       <MarketplaceScreen
@@ -160,6 +163,7 @@ export default function App() {
         onTrain={(stat) => trainStat(activePet.id, stat)}
         onBattle={() => setView('pve')}
         onPvp={isSupabaseConfigured ? () => setView('pvp') : undefined}
+        onDaily={isSupabaseConfigured ? () => setView('daily') : undefined}
         onLeaderboard={isSupabaseConfigured ? () => setView('leaderboard') : undefined}
         onFriends={isSupabaseConfigured ? () => setView('friends') : undefined}
         onMarketplace={isSupabaseConfigured ? () => setView('marketplace') : undefined}
