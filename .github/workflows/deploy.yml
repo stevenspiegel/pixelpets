@@ -38,6 +38,9 @@ jobs:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
 
+      - name: Add home-screen icon + manifest links to index.html
+        run: node scripts/inject-pwa.mjs dist/index.html
+
       - name: Preserve CNAME and disable Jekyll
         run: |
           cp CNAME dist/CNAME
