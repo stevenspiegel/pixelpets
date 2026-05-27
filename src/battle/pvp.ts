@@ -78,6 +78,7 @@ export type BattleCombatant = {
 
 export type BattleStart =
   | { empty: true }
+  | { error: string }
   | {
       battleId: string;
       turn: number;
@@ -111,13 +112,15 @@ export const startBattle = async (
     p_pet_id: petId,
   });
   if (error) {
+    // Surface the reason (e.g. an egg can't battle) instead of masking it as
+    // "no opponents" — the caller decides how to present it.
     console.warn('[pixelpets] start battle error:', error.message);
-    return null;
+    return { error: error.message };
   }
   const res = data as BattleStart;
   // PvE enemy names arrive packed as "Adjective|species"; turn the species
   // emoji into its display name client-side (speciesName lives here).
-  if (res && !('empty' in res) && res.enemy.name.includes('|')) {
+  if (res && 'battleId' in res && res.enemy.name.includes('|')) {
     const [adj, sp] = res.enemy.name.split('|');
     res.enemy.name = `${adj} ${speciesName(sp)}`;
   }
