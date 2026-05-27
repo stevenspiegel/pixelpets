@@ -63,7 +63,7 @@ export const StoreScreen: React.FC<Props> = ({ tokens, onExit }) => {
         </View>
       ))}
 
-      <Text style={styles.footnote}>Secure checkout by Stripe. Tokens are added to your account after payment.</Text>
+      <Text style={styles.footnote}>Secure checkout by Stripe. Tokens are added to your account after payment. All sales are final — Pixel Tokens are a virtual in-game item with no cash value and are non-refundable.</Text>
     </ScrollView>
   );
 };
