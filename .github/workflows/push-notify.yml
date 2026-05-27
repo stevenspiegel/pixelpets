@@ -1,0 +1,31 @@
+name: Send push reminders
+
+on:
+  schedule:
+    - cron: '0 * * * *' # hourly (UTC); care every run, streak in the 23:00 hour
+  workflow_dispatch: {} # allow manual test runs from the Actions tab
+
+# Scheduled workflows only run on the default branch and may lag a few minutes —
+# fine for reminders. Auto-disables after 60 days of repo inactivity.
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install sender deps
+        working-directory: scripts
+        run: npm install --no-audit --no-fund
+
+      - name: Send reminders
+        working-directory: scripts
+        run: node send-push.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
