@@ -27,6 +27,10 @@ type Props = {
   onResult?: (won: boolean) => void;
   // Cloud mode: the server already credited tokens; sync the new balance.
   onWalletChange?: (tokens: number) => void;
+  // Energy gate: whether the active pet has enough energy to start a fight, and
+  // a callback to charge that energy once a fight actually begins.
+  onCanBattle?: () => boolean;
+  onSpendBattleEnergy?: () => void;
   onExit: () => void;
 };
 
@@ -69,6 +73,8 @@ const LocalBattle: React.FC<Props> = ({
   mode = 'pve',
   onReward,
   onResult,
+  onCanBattle,
+  onSpendBattleEnergy,
   onExit,
 }) => {
   const isPvp = mode === 'pvp';
@@ -79,11 +85,18 @@ const LocalBattle: React.FC<Props> = ({
   const rewardedRef = useRef(false);
   const resultRef = useRef(false);
   const [reward, setReward] = useState(0);
+  const [notice, setNotice] = useState('');
 
   const startBattle = useCallback(async () => {
+    if (onCanBattle && !onCanBattle()) {
+      setNotice(`${pet.name} is too tired to battle — let it rest to recover energy.`);
+      setPhase('empty');
+      return;
+    }
     rewardedRef.current = false;
     resultRef.current = false;
     setReward(0);
+    setNotice('');
     if (isPvp) {
       setPhase('loading');
       setState(null);
@@ -93,12 +106,14 @@ const LocalBattle: React.FC<Props> = ({
         return;
       }
       setState(newBattle(pet, enemy, `${enemy.name} accepts your challenge!`));
+      onSpendBattleEnergy?.();
       setPhase('battling');
     } else {
       setState(newBattle(pet, generateOpponent(pet), 'A wild challenger appears!'));
+      onSpendBattleEnergy?.();
       setPhase('battling');
     }
-  }, [isPvp, pet]);
+  }, [isPvp, pet, onCanBattle, onSpendBattleEnergy]);
 
   useEffect(() => {
     startBattle();
@@ -144,7 +159,7 @@ const LocalBattle: React.FC<Props> = ({
       <View style={styles.centerScreen}>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.loadingText}>
-          No opponents available yet.{'\n'}Invite a friend to raise a pet!
+          {notice || `No opponents available yet.\nInvite a friend to raise a pet!`}
         </Text>
         <Pressable onPress={onExit} style={styles.doneBtn}>
           <Text style={styles.doneText}>BACK</Text>
@@ -255,6 +270,8 @@ const ServerBattle: React.FC<Props> = ({
   pet,
   mode = 'pve',
   onWalletChange,
+  onCanBattle,
+  onSpendBattleEnergy,
   onExit,
 }) => {
   const isPvp = mode === 'pvp';
@@ -295,6 +312,11 @@ const ServerBattle: React.FC<Props> = ({
       setPhase('empty');
       return;
     }
+    if (onCanBattle && !onCanBattle()) {
+      setNotice(`${pet.name} is too tired to battle — let it rest to recover energy.`);
+      setPhase('empty');
+      return;
+    }
     const res = await startServerBattle(mode, pet.id);
     if (!res) {
       setNotice('Couldn’t reach the arena — check your connection and try again.');
@@ -323,8 +345,9 @@ const ServerBattle: React.FC<Props> = ({
     setLogLine(
       isPvp ? `${res.enemy.name} accepts your challenge!` : 'A wild challenger appears!'
     );
+    onSpendBattleEnergy?.();
     setPhase('playing');
-  }, [mode, pet.id, pet.name, pet.stage, isPvp]);
+  }, [mode, pet.id, pet.name, pet.stage, isPvp, onCanBattle, onSpendBattleEnergy]);
 
   useEffect(() => {
     begin();
