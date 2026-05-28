@@ -16,7 +16,7 @@ import { ActionButton } from './ActionButton';
 import { RarityBadge } from './RarityBadge';
 import { PetSwitcher } from './PetSwitcher';
 import { BattleStats } from './BattleStats';
-import { MAX_PETS, speciesName, canAscend, effectiveRarity, EGG_COST } from '../state/usePet';
+import { MAX_PETS, speciesName, canAscend, effectiveRarity, EGG_COST, BATTLE_ENERGY_COST } from '../state/usePet';
 
 type Props = {
   pet: PetState;
@@ -117,6 +117,7 @@ export const GameScreen: React.FC<Props> = ({
 
   const isEgg = pet.stage === 'egg';
   const isDead = pet.stage === 'dead';
+  const tooTired = pet.energy < BATTLE_ENERGY_COST;
   const ascendable = canAscend(pet);
   const stageLabel = pet.ascended ? 'ASCENDED' : pet.stage.toUpperCase();
 
@@ -286,27 +287,35 @@ export const GameScreen: React.FC<Props> = ({
 
       {!isEgg && !isDead && (
         <Pressable
-          onPress={onBattle}
+          onPress={tooTired ? undefined : onBattle}
+          disabled={tooTired}
           style={({ pressed }) => [
             styles.battleButton,
-            pressed && styles.battleButtonPressed,
+            tooTired && styles.battleButtonDisabled,
+            !tooTired && pressed && styles.battleButtonPressed,
           ]}
         >
           <Text style={styles.battleText}>⚔️ BATTLE</Text>
-          <Text style={styles.battleSub}>fight a wild challenger for ✦ tokens</Text>
+          <Text style={styles.battleSub}>
+            {tooTired ? `too tired — let ${pet.name} rest` : 'fight a wild challenger for ✦ tokens'}
+          </Text>
         </Pressable>
       )}
 
       {!isEgg && !isDead && onPvp && (
         <Pressable
-          onPress={onPvp}
+          onPress={tooTired ? undefined : onPvp}
+          disabled={tooTired}
           style={({ pressed }) => [
             styles.pvpButton,
-            pressed && styles.battleButtonPressed,
+            tooTired && styles.battleButtonDisabled,
+            !tooTired && pressed && styles.battleButtonPressed,
           ]}
         >
           <Text style={styles.battleText}>🤺 PvP BATTLE</Text>
-          <Text style={styles.battleSub}>challenge another player's pet</Text>
+          <Text style={styles.battleSub}>
+            {tooTired ? `too tired — let ${pet.name} rest` : "challenge another player's pet"}
+          </Text>
         </Pressable>
       )}
 
@@ -580,6 +589,9 @@ const styles = StyleSheet.create({
   battleButtonPressed: {
     transform: [{ translateY: 2 }],
     backgroundColor: '#9a2a4a',
+  },
+  battleButtonDisabled: {
+    opacity: 0.45,
   },
   pvpButton: {
     width: '100%',
