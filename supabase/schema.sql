@@ -1138,3 +1138,111 @@ begin
 end; $$;
 revoke execute on function public.record_purchase(text, uuid, text, int, int) from public, anon, authenticated;
 grant execute on function public.record_purchase(text, uuid, text, int, int) to service_role;
+
+-- ── Marketplace freebies (shelter pets) ───────────────────────────────────────
+-- A safety net for players who've lost their last pet and can't afford an egg:
+-- a Dog and a Cat are ALWAYS available on the marketplace for 0 tokens. They're
+-- not real rows in pets/adoption_listings — list_adoptions returns them as
+-- virtual rows, and adopt_pet detects the special ids and mints a fresh pet
+-- for the adopter. So they can never sell out, and there's no system account to
+-- maintain.
+create or replace function public.list_adoptions()
+returns table (
+  pet_id text, seller_username text, price integer,
+  name text, species text, rarity text,
+  level integer, stage text, ascended boolean, stats jsonb
+)
+language sql security definer set search_path = public as $$
+  -- ord 0 keeps the shelter freebies pinned to the top of the list.
+  select pet_id, seller_username, price, name, species, rarity,
+         level, stage, ascended, stats
+  from (
+    select 0 as ord, 'freebie_dog'::text as pet_id, 'shelter'::text as seller_username,
+           0 as price, 'Buddy'::text as name, '🐕'::text as species, 'common'::text as rarity,
+           1 as level, 'baby'::text as stage, false as ascended,
+           jsonb_build_object('attack', 12, 'defense', 12, 'speed', 12, 'maxHp', 50) as stats,
+           null::timestamptz as sort_at
+    union all
+    select 0, 'freebie_cat', 'shelter',
+           0, 'Mittens', '🐈', 'common',
+           1, 'baby', false,
+           jsonb_build_object('attack', 12, 'defense', 12, 'speed', 12, 'maxHp', 50),
+           null
+    union all
+    select 1, l.pet_id, s.username,
+           l.price, p.name, p.species, p.rarity,
+           p.level, p.stage, coalesce(p.ascended, false), p.stats,
+           l.created_at
+    from public.adoption_listings l
+    join public.pets p     on p.id = l.pet_id
+    join public.profiles s on s.id = l.seller
+  ) z
+  order by ord, sort_at desc nulls last;
+$$;
+grant execute on function public.list_adoptions() to authenticated;
+
+create or replace function public.adopt_pet(target_pet text)
+returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  me        uuid := auth.uid();
+  seller_id uuid;
+  cost      integer;
+  bal       integer;
+  owned     integer;
+  pid       text;
+  now_ms    bigint;
+begin
+  if me is null then raise exception 'Not authenticated'; end if;
+
+  -- Shelter freebie: mint a fresh starter pet instead of transferring.
+  if target_pet in ('freebie_dog', 'freebie_cat') then
+    select count(*) into owned from public.pets where owner = me;
+    if owned >= public.market_max_pets() then
+      raise exception 'Your collection is full';
+    end if;
+    pid := 'p_' || replace(gen_random_uuid()::text, '-', '');
+    now_ms := (extract(epoch from now()) * 1000)::bigint;
+    insert into public.pets (
+      id, owner, name, species, rarity, stats, level, stage,
+      hunger, happiness, cleanliness, energy, health, age,
+      born_at, last_tick, asleep, poops, sick, ascended
+    ) values (
+      pid, me,
+      case target_pet when 'freebie_dog' then 'Buddy' else 'Mittens' end,
+      case target_pet when 'freebie_dog' then '🐕' else '🐈' end,
+      'common',
+      jsonb_build_object('attack', 12, 'defense', 12, 'speed', 12, 'maxHp', 50),
+      1, 'baby',
+      70, 70, 90, 80, 100, 0,
+      now_ms, now_ms, false, 0, false, false
+    );
+    return 'ok';
+  end if;
+
+  -- Regular listing: existing flow (lock, validate, transfer tokens + ownership).
+  select l.seller, l.price into seller_id, cost
+  from public.adoption_listings l where l.pet_id = target_pet for update;
+  if seller_id is null then
+    raise exception 'This pet is no longer available';
+  end if;
+  if seller_id = me then
+    raise exception 'You are already this pet''s owner';
+  end if;
+  select count(*) into owned from public.pets where owner = me;
+  if owned >= public.market_max_pets() then
+    raise exception 'Your collection is full';
+  end if;
+  select tokens into bal from public.profiles where id = me for update;
+  if bal < cost then
+    raise exception 'Not enough tokens';
+  end if;
+  update public.profiles set tokens = tokens - cost where id = me;
+  update public.profiles set tokens = tokens + cost where id = seller_id;
+  update public.pets set owner = me where id = target_pet;
+  update public.profiles set active_pet_id = null
+    where id = seller_id and active_pet_id = target_pet;
+  delete from public.adoption_listings where pet_id = target_pet;
+  return 'ok';
+end; $$;
+grant execute on function public.adopt_pet(text) to authenticated;
