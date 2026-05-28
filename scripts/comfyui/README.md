@@ -51,10 +51,14 @@ adding files, or click **Refresh** in the UI so they appear in the loaders.
 
 ## 3. Load the workflow
 
-`scripts/comfyui/pixelpet-sdxl-lora.json` is an **API-format** workflow using
-only built-in nodes. Two ways to use it:
-- **UI**: drag the file onto the ComfyUI canvas, tweak the prompt, hit *Queue*.
-- **API / MCP**: it's already in the shape ComfyUI's `/prompt` endpoint expects.
+`scripts/comfyui/pixelpet-sdxl-lora.json` is an **API-format** workflow (the
+shape ComfyUI's `/prompt` endpoint and MCP `enqueue_workflow` expect) using only
+built-in nodes. Two ways to use it:
+- **MCP (recommended for automation)**: submit it via a custom-workflow MCP
+  server — see step 4b. This is how Claude triggers it directly.
+- **UI**: API format isn't plain drag-drop. Enable *Settings → Enable Dev mode
+  Options*, then use the **"Load (API Format)"** button to import it, tweak the
+  prompt, and *Queue*.
 
 Key settings baked in (the documented Pixel Art XL starting recipe): **8 steps**,
 **CFG 1.5**, `euler_ancestral`, **LoRA strength 1.2**, 1024×1024. Edit node `4`
@@ -108,11 +112,84 @@ params — it won't automatically use the SDXL + Pixel Art XL graph in
 - **Most reliable:** load `pixelpet-sdxl-lora.json` in the **ComfyUI UI**
   (drag onto the canvas), set the prompt, and **Queue** it. Use the MCP server
   for quick prompt-driven generations / automation.
-- **MCP-driven custom workflow:** use a server that supports executing a
-  supplied workflow file (e.g. `nikolaibibo/claude-comfyui-mcp` or
-  `artokun/comfyui-mcp`, which add template/custom-workflow execution). Then
-  Claude can trigger this exact SDXL+LoRA workflow. Configs for those differ —
-  tell me which you pick and I'll write the exact block.
+- **MCP-driven custom workflow:** use a server that can execute a supplied
+  API-format workflow with input overrides — see **step 4b** for the exact
+  config. Then Claude triggers this SDXL+LoRA graph directly.
+
+## 4b. Drive this exact workflow from Claude (custom-workflow MCP)
+
+`joenorton` (step 4) runs its own built-in graph. To have Claude trigger **this
+SDXL + Pixel Art XL workflow** with a per-pet prompt, use a server that executes
+a supplied API-format workflow with input overrides.
+
+### Recommended: `artokun/comfyui-mcp` (Claude Code)
+
+Node ≥ 22, ComfyUI running locally (it auto-probes ports 8188/8000). Add to
+`~/.claude/settings.json` (user-level) or a project `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "comfyui": {
+      "command": "npx",
+      "args": ["-y", "comfyui-mcp"],
+      "env": {
+        "COMFYUI_URL": "http://127.0.0.1:8188",
+        "CIVITAI_API_TOKEN": ""
+      }
+    }
+  }
+}
+```
+
+(`CIVITAI_API_TOKEN` is optional — only needed if you let it download models.
+There's also a one-shot `claude plugin install comfyui-mcp` if you've added its
+plugin marketplace; the `npx` block above is the dependency-free route.)
+
+Reload Claude Code, then to run the graph ask Claude to call **`enqueue_workflow`**
+with the contents of `scripts/comfyui/pixelpet-sdxl-lora.json`, overriding:
+
+| Override | Effect | Node it lands on |
+|----------|--------|------------------|
+| `text` | the prompt | the **positive** `CLIPTextEncode` (node `6`) |
+| `seed` | reproducibility / variation | `KSampler` (node `3`) |
+| `steps`, `cfg_scale` | sampler tuning | `KSampler` (node `3`) |
+| `sampler_name`, `scheduler` | sampler/scheduler | `KSampler` (node `3`) |
+
+So a typical ask is: *"enqueue the pixelpet workflow with text='pixel art, a
+sloth, side profile, baby, full body, flat background, crisp pixels, limited
+palette, game sprite' and seed=42."* It returns a `prompt_id`; poll with
+`get_job_status`, then grab the file from `ComfyUI/output/`. (There's also a
+quick `/comfy:gen <prompt>` command, but that uses the server's default workflow,
+not this one.)
+
+> Prompt targeting: if the server applies `text` to **both** CLIPTextEncode
+> nodes, keep node `7` as the negative by overriding only the positive, or move
+> the negative text into the prompt-builder. Verify the first run hit node `6`.
+
+### Alternative: `nikolaibibo/claude-comfyui-mcp` (Claude Desktop)
+
+Node ≥ 22; `npm install && npm run build`. `config.json` points at your ComfyUI
+install; Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "comfyui": {
+      "command": "node",
+      "args": ["C:\\path\\to\\claude-comfyui-mcp\\dist\\index.js"],
+      "env": { "COMFYUI_CONFIG": "C:\\path\\to\\claude-comfyui-mcp\\config.json" }
+    }
+  }
+}
+```
+
+Drop `pixelpet-sdxl-lora.json` into its workflow library
+(`<ComfyUI>\user\default\workflows\mcp_library`), then use `comfy_load_workflow`
++ `comfy_submit_workflow` (accepts custom workflow JSON **with overrides**).
+
+> Both are **localhost** servers, so they pair with Claude Code / Desktop on the
+> same machine — not web sessions. Vet third-party servers before running them.
 
 ## 5. Generate → finish → wire
 

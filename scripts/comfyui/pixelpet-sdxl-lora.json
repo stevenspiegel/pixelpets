@@ -1,5 +1,4 @@
 {
-  "_comment": "Pixel Pets sprite generator — ComfyUI API-format workflow (SDXL + Pixel Art XL LoRA). Built-in nodes only, so it loads on any recent ComfyUI without custom-node packs. It renders a 1024x1024 pixel-art-styled image on a plain background; the repo's converter (scripts/make-sprite.mjs) then does the 64x64 fit, palette-lock to src/sprites/palette.ts, and background key-out. To make the art self-contained inside ComfyUI instead, see scripts/comfyui/README.md (PixelArt-Detector + rembg nodes). Load via ComfyUI: drag this file onto the canvas, or POST it to /prompt. Adjust ckpt_name / lora_name to match your models/ folder.",
   "3": {
     "class_type": "KSampler",
     "inputs": {
