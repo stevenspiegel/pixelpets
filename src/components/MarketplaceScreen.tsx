@@ -163,7 +163,7 @@ export const MarketplaceScreen: React.FC<Props> = ({
                   LV {stats.level} · {speciesName(l.species)}
                 </Text>
                 <RarityBadge rarity={l.ascended ? 'mythical' : l.rarity} />
-                <Text style={styles.price}>✦ {l.price}</Text>
+                <Text style={styles.price}>{l.price === 0 ? 'FREE' : `✦ ${l.price}`}</Text>
                 <Text style={styles.seller} numberOfLines={1}>
                   @{l.sellerUsername}
                 </Text>
