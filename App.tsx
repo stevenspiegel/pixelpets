@@ -8,7 +8,6 @@ import {
   Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { Alert } from 'react-native';
 import { useAuth } from './src/state/useAuth';
 import { usePet, EGG_COST } from './src/state/usePet';
 import { isSupabaseConfigured } from './src/lib/supabase';
@@ -47,7 +46,6 @@ export default function App() {
     setWalletTokens,
     reloadCollection,
     importablePets,
-    scanLocalPets,
     importLocalPets,
     skipImport,
     act,
@@ -90,22 +88,6 @@ export default function App() {
     if (activePet) removePet(activePet.id);
   };
 
-  // Manual recovery of pets saved in this browser's local storage.
-  const handleRestore = async () => {
-    const n = await scanLocalPets();
-    if (n === 0) {
-      const msg = 'No saved pets were found in this browser.';
-      if (Platform.OS === 'web') {
-        // eslint-disable-next-line no-alert
-        if (typeof window !== 'undefined') window.alert(msg);
-      } else {
-        Alert.alert('Restore pets', msg);
-      }
-    }
-    // If pets were found, scanLocalPets set importablePets → ImportScreen shows.
-  };
-  const onRestore = isSupabaseConfigured ? handleRestore : undefined;
-
   let screen: React.ReactNode;
   if (!ready) {
     screen = (
@@ -133,7 +115,6 @@ export default function App() {
         tokens={tokens}
         cost={EGG_COST}
         onCancel={pets.length > 0 ? () => setAddingNew(false) : undefined}
-        onRestore={pets.length === 0 ? onRestore : undefined}
         onMarketplace={isSupabaseConfigured ? () => setView('marketplace') : undefined}
       />
     );
@@ -187,7 +168,6 @@ export default function App() {
         onLeaderboard={isSupabaseConfigured ? () => setView('leaderboard') : undefined}
         onFriends={isSupabaseConfigured ? () => setView('friends') : undefined}
         onMarketplace={isSupabaseConfigured ? () => setView('marketplace') : undefined}
-        onRestore={onRestore}
         onLogOut={logOut}
       />
     );

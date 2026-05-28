@@ -17,7 +17,6 @@ type Props = {
   tokens: number;
   cost: number;
   onCancel?: () => void;
-  onRestore?: () => void;
   onMarketplace?: () => void;
 };
 
@@ -28,7 +27,6 @@ export const HatchScreen: React.FC<Props> = ({
   tokens,
   cost,
   onCancel,
-  onRestore,
   onMarketplace,
 }) => {
   const [name, setName] = useState('');
@@ -95,11 +93,6 @@ export const HatchScreen: React.FC<Props> = ({
       {onCancel && (
         <Pressable onPress={onCancel} style={styles.cancel} hitSlop={8}>
           <Text style={styles.cancelText}>← back to my pets</Text>
-        </Pressable>
-      )}
-      {onRestore && (
-        <Pressable onPress={onRestore} style={styles.cancel} hitSlop={8}>
-          <Text style={styles.cancelText}>restore pets from this device</Text>
         </Pressable>
       )}
     </KeyboardAvoidingView>
