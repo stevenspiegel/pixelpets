@@ -11,6 +11,15 @@ network, no `npm install` (PNG codec is built on Node's `zlib`).
 node scripts/make-sprite.mjs --in path/to/render.png --slug fox --stage baby
 ```
 
+There are also `npm` shortcuts (note the `--` before the flags, which tells npm
+to pass them through):
+
+```sh
+npm run sprite -- --in path/to/render.png --slug fox --stage baby
+npm run sprite:generate -- --space owner/space --prompt "..." --out /tmp/fox.png --slug fox --stage baby
+npm run sprite:wire
+```
+
 This fits the image into a 64×64 transparent frame, snaps every colour to the
 shared palette (`src/sprites/palette.ts`), writes
 `assets/sprites/fox-baby.png`, and registers it in `src/sprites/images.ts` so it
