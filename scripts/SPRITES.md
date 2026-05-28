@@ -99,6 +99,20 @@ sandbox blocks it by default (a boot-time egress proxy returns HTTP 403 for
 
 Running on your **local machine** needs none of this — HF is already reachable.
 
+## Preview / debug a sprite in the terminal
+
+Image viewers often render transparency as **black**, which makes it impossible
+to tell a removed background from holes in the subject. This prints the real
+silhouette (and counts enclosed holes) regardless of any viewer:
+
+```sh
+node scripts/preview-sprite.mjs assets/sprites/fox-baby.png
+```
+
+`#` = opaque, blank = transparent. It reports opaque/background pixel counts and
+**interior holes** (transparent pixels enclosed by the subject) — `holes 0` means
+a clean cutout.
+
 ## Species map
 
 `scripts/species-map.json` maps each slug to its species emoji and controls the
