@@ -58,6 +58,6 @@ export function wireSprites({ quiet = false } = {}) {
 }
 
 // Run when invoked directly.
-if (import.meta.url === url.pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === url.pathToFileURL(process.argv[1]).href) {
   wireSprites();
 }

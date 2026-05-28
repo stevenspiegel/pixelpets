@@ -31,6 +31,36 @@ dragon/unicorn). Do the four life stages per species for full coverage.
 | `--species 🦊` | Register a brand-new slug→emoji mapping (or override one). |
 | `--no-wire` | Just write the PNG; don't touch `images.ts`. |
 
+## Generate from a free Hugging Face Space
+
+`generate-hf.mjs` pulls a source image from a free Gradio Space (no API key
+needed) and can pipe it straight through the converter:
+
+```sh
+# generate only
+node scripts/generate-hf.mjs --space owner/space --api-name /predict \
+  --prompt "pixel art fox, side profile, baby, transparent background" \
+  --out /tmp/fox.png
+
+# generate + convert + wire in one command (extra flags pass to make-sprite)
+node scripts/generate-hf.mjs --space owner/space --prompt "pixel art fox baby" \
+  --out /tmp/fox.png --slug fox --stage baby --bg '#ffffff'
+```
+
+Per-Space setup: every Space has a different input signature. Open the Space's
+**"Use via API"** panel (bottom of its page) to get the exact `--api-name` and
+input order, then pass the inputs with `--data '<json-array>'` (overrides
+`--prompt`/`--negative`). An `HF_TOKEN` env var or `--token` is optional and
+only raises rate limits.
+
+Requirements & caveats:
+- **Network**: needs outbound access to `<space>.hf.space`. It will not run in a
+  sandbox whose network policy blocks Hugging Face.
+- Free Spaces sleep and queue — if it times out, just retry (`--timeout <sec>`).
+- For style consistency across the four life stages, generate each stage as
+  img2img from the previous one where the Space supports it.
+- Speaks the modern Gradio 4.x+ `/call` protocol.
+
 ## Species map
 
 `scripts/species-map.json` maps each slug to its species emoji and controls the
