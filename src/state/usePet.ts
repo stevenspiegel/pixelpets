@@ -28,9 +28,9 @@ export const MAX_PETS = 8;
 const SPECIES_BY_RARITY: Record<Rarity, readonly string[]> = {
   common:    ['🐕', '🐈', '🐇', '🐢'],
   uncommon:  ['🦊', '🐍', '🦎', '🦇', '🦔', '🐧'],
-  rare:      ['🦌', '🦥', '🦉', '🦅', '🦘', '🦫', '🦒'],
-  epic:      ['🐅', '🐘', '🦏', '🐊', '🦈', '🐙'],
-  legendary: ['🐉', '🦄', '🧜', '🦖'],
+  rare:      ['🦥', '🦉', '🦅', '🦘', '🦫', '🦒'],
+  epic:      ['🐅', '🐘', '🐊', '🦈', '🐙', '🦖'],
+  legendary: ['🐉', '🦄', '🧜'],
   // Not hatchable — reached only by ascending a dragon or unicorn.
   mythical: [],
 };
@@ -45,6 +45,8 @@ const LEGACY_RARITY: Record<string, Rarity> = {
   '🐺': 'rare',    '🐼': 'rare',    '🐨': 'rare',  '🦡': 'rare',  '🦦': 'rare',
   '🦁': 'epic',    '🐯': 'epic',    '🦛': 'epic',  '🦚': 'epic',  '🦬': 'epic',
   '🐲': 'legendary', '🦕': 'legendary', // 🦕 sauropod retired from the pool
+  // 🦌 deer + 🦏 rhino retired from the pool; 🦖 T-Rex moved to epic (still hatchable).
+  '🦌': 'rare', '🦏': 'epic',
 };
 
 // Human-readable name for each species emoji, used in the UI.

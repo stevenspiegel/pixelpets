@@ -676,9 +676,9 @@ begin
     r := random() * 100;
     if    r < 60 then rarity := 'common';    pool := array['🐕','🐈','🐇','🐢'];
     elsif r < 85 then rarity := 'uncommon';  pool := array['🦊','🐍','🦎','🦇','🦔','🐧'];
-    elsif r < 95 then rarity := 'rare';      pool := array['🦌','🦥','🦉','🦅','🦘','🦫','🦒'];
-    elsif r < 99 then rarity := 'epic';      pool := array['🐅','🐘','🦏','🐊','🦈','🐙'];
-    else              rarity := 'legendary'; pool := array['🐉','🦄','🧜','🦖'];
+    elsif r < 95 then rarity := 'rare';      pool := array['🦥','🦉','🦅','🦘','🦫','🦒'];
+    elsif r < 99 then rarity := 'epic';      pool := array['🐅','🐘','🐊','🦈','🐙','🦖'];
+    else              rarity := 'legendary'; pool := array['🐉','🦄','🧜'];
     end if;
     species := pool[1 + floor(random() * array_length(pool, 1))::int];
   end if;
