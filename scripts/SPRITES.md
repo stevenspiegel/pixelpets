@@ -5,6 +5,9 @@ hand-drawn PNG) into a game-ready pet sprite that matches the existing art —
 then wire it into the app automatically. Runs fully offline: no API key, no
 network, no `npm install` (PNG codec is built on Node's `zlib`).
 
+> Generating art with a local ComfyUI (SDXL + Pixel Art XL LoRA, NVIDIA, driven
+> via MCP)? See **[comfyui/README.md](comfyui/README.md)** — it feeds this pipeline.
+
 ## One sprite at a time
 
 ```sh
