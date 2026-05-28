@@ -113,6 +113,17 @@ node scripts/preview-sprite.mjs assets/sprites/fox-baby.png
 **interior holes** (transparent pixels enclosed by the subject) — `holes 0` means
 a clean cutout.
 
+To review a whole species at once, tile its stages into one image (over a
+transparency checkerboard, so it reads correctly in any viewer):
+
+```sh
+node scripts/contact-sheet.mjs fox            # baby→child→teen→adult in a row
+node scripts/contact-sheet.mjs fox owl tiger  # one row per species
+```
+
+It prints the output path (a temp PNG) and the column order. `--scale N` changes
+tile size; `--out F` sets the path.
+
 ## Species map
 
 `scripts/species-map.json` maps each slug to its species emoji and controls the
