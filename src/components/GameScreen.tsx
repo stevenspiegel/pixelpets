@@ -121,6 +121,13 @@ export const GameScreen: React.FC<Props> = ({
   const ascendable = canAscend(pet);
   const stageLabel = pet.ascended ? 'ASCENDED' : pet.stage.toUpperCase();
 
+  const menuItems: { key: string; icon: string; label: string; onPress: () => void }[] = [];
+  if (onDaily) menuItems.push({ key: 'daily', icon: '📅', label: 'Daily Quests', onPress: onDaily });
+  if (onStore) menuItems.push({ key: 'store', icon: '💎', label: 'Buy Tokens', onPress: onStore });
+  if (onMarketplace) menuItems.push({ key: 'market', icon: '🏷️', label: 'Marketplace', onPress: onMarketplace });
+  if (onLeaderboard) menuItems.push({ key: 'leaderboard', icon: '🏆', label: 'Leaderboard', onPress: onLeaderboard });
+  if (onFriends) menuItems.push({ key: 'friends', icon: '👥', label: 'Friends', onPress: onFriends });
+
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       <View style={styles.topBar}>
@@ -319,42 +326,31 @@ export const GameScreen: React.FC<Props> = ({
         </Pressable>
       )}
 
-      {onDaily && (
-        <Pressable onPress={onDaily} style={styles.resetButton} hitSlop={8}>
-          <Text style={styles.resetText}>📅 daily quests</Text>
-        </Pressable>
-      )}
-
-      {onStore && (
-        <Pressable onPress={onStore} style={styles.resetButton} hitSlop={8}>
-          <Text style={styles.resetText}>💎 buy tokens</Text>
-        </Pressable>
-      )}
-
-      {onLeaderboard && (
-        <Pressable onPress={onLeaderboard} style={styles.resetButton} hitSlop={8}>
-          <Text style={styles.resetText}>🏆 leaderboard</Text>
-        </Pressable>
-      )}
-
-      {onFriends && (
-        <Pressable onPress={onFriends} style={styles.resetButton} hitSlop={8}>
-          <Text style={styles.resetText}>👥 friends</Text>
-        </Pressable>
-      )}
-
-      {onMarketplace && (
-        <Pressable onPress={onMarketplace} style={styles.resetButton} hitSlop={8}>
-          <Text style={styles.resetText}>🏷️ marketplace</Text>
-        </Pressable>
+      {menuItems.length > 0 && (
+        <View style={styles.menuSection}>
+          <Text style={styles.menuHeader}>MENU</Text>
+          <View style={styles.menuGrid}>
+            {menuItems.map((m) => (
+              <Pressable
+                key={m.key}
+                onPress={m.onPress}
+                style={({ pressed }) => [styles.menuTile, pressed && styles.menuTilePressed]}
+              >
+                <Text style={styles.menuIcon}>{m.icon}</Text>
+                <Text style={styles.menuLabel}>{m.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
       )}
 
       <Pressable
         onPress={() => confirmRemove(pet.name, onRemove)}
-        style={styles.resetButton}
+        style={styles.dangerButton}
+        hitSlop={8}
       >
-        <Text style={styles.resetText}>
-          {isDead ? `bury ${pet.name.toLowerCase()}` : `release ${pet.name.toLowerCase()}`}
+        <Text style={styles.dangerText}>
+          {isDead ? `⚰️ bury ${pet.name.toLowerCase()}` : `release ${pet.name.toLowerCase()}`}
         </Text>
       </Pressable>
     </ScrollView>
@@ -618,13 +614,60 @@ const styles = StyleSheet.create({
     marginTop: 3,
     letterSpacing: 1,
   },
-  resetButton: {
-    marginTop: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+  menuSection: {
+    width: '100%',
+    maxWidth: 380,
+    marginTop: 22,
   },
-  resetText: {
-    color: '#8a76c0',
+  menuHeader: {
+    color: '#bfa8f0',
+    fontFamily: 'Courier',
+    fontSize: 11,
+    fontWeight: 'bold',
+    letterSpacing: 3,
+    marginBottom: 8,
+    marginLeft: 2,
+  },
+  menuGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  menuTile: {
+    width: '48%',
+    backgroundColor: '#2a1a4a',
+    borderWidth: 2,
+    borderColor: '#7a4ed0',
+    borderRadius: 6,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  menuTilePressed: {
+    transform: [{ translateY: 2 }],
+    backgroundColor: '#3a2070',
+  },
+  menuIcon: {
+    fontSize: 22,
+  },
+  menuLabel: {
+    color: '#e0d4ff',
+    fontFamily: 'Courier',
+    fontSize: 11,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+    marginTop: 5,
+  },
+  dangerButton: {
+    marginTop: 14,
+    marginBottom: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    alignSelf: 'center',
+  },
+  dangerText: {
+    color: '#c0607a',
     fontFamily: 'Courier',
     fontSize: 12,
     letterSpacing: 2,
