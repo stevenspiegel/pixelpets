@@ -199,9 +199,9 @@ const FriendProfile: React.FC<{
 
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { justifyContent: 'flex-end' }]}>
         <Pressable onPress={onBack} hitSlop={8}>
-          <Text style={styles.exit}>← FRIENDS</Text>
+          <Text style={styles.exit}>BACK</Text>
         </Pressable>
       </View>
 
