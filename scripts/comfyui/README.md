@@ -56,47 +56,63 @@ only built-in nodes. Two ways to use it:
 - **UI**: drag the file onto the ComfyUI canvas, tweak the prompt, hit *Queue*.
 - **API / MCP**: it's already in the shape ComfyUI's `/prompt` endpoint expects.
 
-Key settings baked in (the Pixel Art XL LoRA recipe): **8 steps**, **CFG 1.5**,
-`euler_ancestral`, **LoRA strength 1.2**, 1024×1024. Edit node `4` `ckpt_name`
-and node `10` `lora_name` if your filenames differ.
+Key settings baked in (the documented Pixel Art XL starting recipe): **8 steps**,
+**CFG 1.5**, `euler_ancestral`, **LoRA strength 1.2**, 1024×1024. Edit node `4`
+`ckpt_name` and node `10` `lora_name` if your filenames differ. If 8-step output
+looks weak/unstable, fall back to standard SDXL settings — **~25 steps at
+CFG 6–7** (the few-step recipe assumes an LCM-style setup).
 
 ## 4. Install the ComfyUI MCP server
 
 This bridges Claude ↔ your local ComfyUI (`localhost:8188`). Example using
-`joenorton/comfyui-mcp-server` (Python 3.10+, needs `uv`):
+`joenorton/comfyui-mcp-server`:
 
 ```sh
 git clone https://github.com/joenorton/comfyui-mcp-server
 cd comfyui-mcp-server
-uv sync
-# (keep ComfyUI running in another terminal on :8188)
-uv run python server.py
+pip install -r requirements.txt
+# keep ComfyUI running in another terminal on :8188, then:
+python server.py
 ```
 
-Register it with **Claude Code** (run from anywhere):
-```sh
-claude mcp add comfyui -- uv --directory /ABS/PATH/TO/comfyui-mcp-server run python server.py
-```
-…or add it by hand to your MCP config (Claude Desktop `claude_desktop_config.json`
-or Claude Code settings):
+`server.py` talks to ComfyUI's REST API on `:8188` and serves MCP over
+**streamable HTTP at `http://127.0.0.1:9000/mcp`**. Point your client at that URL
+via a `.mcp.json` in your project root (Claude Code) or your client's MCP config:
+
 ```json
 {
   "mcpServers": {
     "comfyui": {
-      "command": "uv",
-      "args": ["--directory", "/ABS/PATH/TO/comfyui-mcp-server", "run", "python", "server.py"],
-      "env": { "COMFYUI_HOST": "127.0.0.1", "COMFYUI_PORT": "8188" }
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:9000/mcp"
     }
   }
 }
 ```
-It exposes an image-generation tool (params like `prompt`, `width`, `height`,
-`model`, `workflow_id`) and talks to ComfyUI's `/prompt` API over WebSocket.
+(Some clients want `"type": "http"` — both work.) Restart/reload the client and
+the tools appear: `generate_image` (`prompt`, `width`, `height`, `steps`,
+`model`), plus `regenerate`, `view_image`, `list_assets`, `get_job`,
+`cancel_job`.
 
-> Important: this is a **local stdio** MCP server, so it only works with
-> **Claude Code running on this same machine** — a web session can't reach your
-> localhost. (For web sessions you'd use Comfy Cloud's hosted MCP instead.)
-> Vet any third-party MCP server before running it.
+> Local-only: the server listens on `127.0.0.1:9000`, so it pairs with **Claude
+> Code / Desktop on this same machine** — a web session can't reach your
+> localhost. (For web sessions, use Comfy Cloud's hosted MCP instead.) Vet any
+> third-party MCP server before running it.
+
+### Running *this* SDXL+LoRA workflow vs. the server's `generate_image`
+
+`generate_image` on this server drives its own built-in workflow with simple
+params — it won't automatically use the SDXL + Pixel Art XL graph in
+`pixelpet-sdxl-lora.json`. Two ways to get the exact recipe:
+
+- **Most reliable:** load `pixelpet-sdxl-lora.json` in the **ComfyUI UI**
+  (drag onto the canvas), set the prompt, and **Queue** it. Use the MCP server
+  for quick prompt-driven generations / automation.
+- **MCP-driven custom workflow:** use a server that supports executing a
+  supplied workflow file (e.g. `nikolaibibo/claude-comfyui-mcp` or
+  `artokun/comfyui-mcp`, which add template/custom-workflow execution). Then
+  Claude can trigger this exact SDXL+LoRA workflow. Configs for those differ —
+  tell me which you pick and I'll write the exact block.
 
 ## 5. Generate → finish → wire
 
