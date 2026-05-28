@@ -203,9 +203,6 @@ const FriendProfile: React.FC<{
         <Pressable onPress={onBack} hitSlop={8}>
           <Text style={styles.exit}>← FRIENDS</Text>
         </Pressable>
-        <Pressable onPress={onRemove} hitSlop={8}>
-          <Text style={styles.removeText}>remove</Text>
-        </Pressable>
       </View>
 
       <Text style={styles.profileName}>@{friend.username}</Text>
@@ -246,6 +243,14 @@ const FriendProfile: React.FC<{
           })}
         </View>
       )}
+
+      <Pressable
+        onPress={onRemove}
+        hitSlop={8}
+        style={({ pressed }) => [styles.removeFriendBtn, pressed && styles.removeFriendBtnPressed]}
+      >
+        <Text style={styles.removeFriendText}>REMOVE FRIEND</Text>
+      </Pressable>
     </ScrollView>
   );
 };
@@ -274,11 +279,26 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     letterSpacing: 2,
   },
-  removeText: {
+  removeFriendBtn: {
+    marginTop: 28,
+    marginBottom: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderWidth: 2,
+    borderColor: '#7a2a3a',
+    borderRadius: 4,
+    alignSelf: 'center',
+  },
+  removeFriendBtnPressed: {
+    transform: [{ translateY: 2 }],
+    backgroundColor: '#3a1a2a',
+  },
+  removeFriendText: {
     color: '#ff8aa3',
     fontFamily: 'Courier',
     fontSize: 12,
-    letterSpacing: 1,
+    fontWeight: 'bold',
+    letterSpacing: 2,
   },
   addRow: {
     width: '100%',
