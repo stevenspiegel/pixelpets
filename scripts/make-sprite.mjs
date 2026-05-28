@@ -19,16 +19,19 @@
 //   --species <emoji>     Register/override the slug -> emoji mapping.
 //   --size <n>            Output size in px (default 64, square).
 //   --fit contain|cover|stretch   How to fit the source (default contain).
+//   --autobg              Auto-remove the background by flood-fill from the
+//                         edges (best for AI renders on a flat backdrop; no
+//                         colour needed, won't punch holes in the subject).
 //   --bg <#rrggbb>        Knock out this solid background colour to transparent.
-//   --bg-tolerance <n>    Colour distance for --bg (default 28).
+//   --bg-tolerance <n>    Colour distance for --bg / --autobg (autobg default 60).
 //   --alpha-threshold <n> Pixels with alpha below this become transparent (default 128).
 //   --no-wire             Don't touch images.ts (just write the PNG).
 import fs from 'fs';
 import path from 'path';
 import url from 'url';
 import {
-  decodePng, encodePng, fitToCanvas, keyOutBackground, quantizeToPalette,
-  loadPalette, loadRegistry, STAGES,
+  decodePng, encodePng, fitToCanvas, keyOutBackground, removeBackgroundFlood,
+  quantizeToPalette, loadPalette, loadRegistry, STAGES,
 } from './sprite-lib.mjs';
 import { wireSprites } from './wire-sprites.mjs';
 
@@ -105,7 +108,8 @@ try {
 }
 const { width, height, rgba } = decoded;
 
-if (args.bg) keyOutBackground(rgba, args.bg, bgTolerance);
+if (args.autobg) removeBackgroundFlood(rgba, width, height, args['bg-tolerance'] ? bgTolerance : 60);
+else if (args.bg) keyOutBackground(rgba, args.bg, bgTolerance);
 const framed = fitToCanvas(rgba, width, height, size, fit);
 quantizeToPalette(framed, palette, alphaThreshold);
 

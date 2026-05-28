@@ -274,6 +274,45 @@ export function keyOutBackground(rgba, hex, tolerance) {
   }
 }
 
+// Remove the connected background by flood-filling inward from the image edges,
+// where the backdrop always sits. Reference colour = the average of the border
+// pixels; any edge-connected pixel within `tolerance` of it becomes transparent.
+// Because it only follows *connected* matches, same-coloured regions inside the
+// subject are preserved (no holes) — unlike a global colour key. Best for AI
+// renders on a flat/simple background.
+export function removeBackgroundFlood(rgba, w, h, tolerance) {
+  let rs = 0, gs = 0, bs = 0, n = 0;
+  const sample = (x, y) => {
+    const o = (y * w + x) * 4;
+    if (rgba[o + 3] > 0) { rs += rgba[o]; gs += rgba[o + 1]; bs += rgba[o + 2]; n++; }
+  };
+  for (let x = 0; x < w; x++) { sample(x, 0); sample(x, h - 1); }
+  for (let y = 0; y < h; y++) { sample(0, y); sample(w - 1, y); }
+  if (n === 0) return;
+  const rr = rs / n, rg = gs / n, rb = bs / n;
+  const t2 = tolerance * tolerance * 3;
+  const visited = new Uint8Array(w * h);
+  const stack = [];
+  const seed = (x, y) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return;
+    const p = y * w + x;
+    if (visited[p]) return;
+    visited[p] = 1;
+    const o = p * 4;
+    if (rgba[o + 3] === 0) { stack.push(p); return; } // already transparent: keep spreading
+    const dr = rgba[o] - rr, dg = rgba[o + 1] - rg, db = rgba[o + 2] - rb;
+    if (dr * dr + dg * dg + db * db <= t2) stack.push(p);
+  };
+  for (let x = 0; x < w; x++) { seed(x, 0); seed(x, h - 1); }
+  for (let y = 0; y < h; y++) { seed(0, y); seed(w - 1, y); }
+  while (stack.length) {
+    const p = stack.pop();
+    rgba[p * 4 + 3] = 0;
+    const x = p % w, y = (p / w) | 0;
+    seed(x + 1, y); seed(x - 1, y); seed(x, y + 1); seed(x, y - 1);
+  }
+}
+
 // Snap every opaque pixel to the nearest palette colour; pixels below
 // alphaThreshold become fully transparent, the rest become fully opaque
 // (crisp pixel-art edges, matching the existing hand-drawn sprites).

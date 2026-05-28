@@ -35,7 +35,8 @@ dragon/unicorn). Do the four life stages per species for full coverage.
 
 | Flag | Purpose |
 |------|---------|
-| `--bg '#00ff00'` | Knock out a solid background colour (for generators that output an opaque backdrop). |
+| `--autobg` | Auto-remove the background by flood-fill from the edges. Best for AI renders on a flat/simple backdrop — no colour needed, and it won't punch holes in the subject. |
+| `--bg '#00ff00'` | Knock out a specific solid background colour (when you know it / `--autobg` isn't a fit). |
 | `--bg-tolerance 28` | How close a colour must be to `--bg` to be removed. |
 | `--fit contain\|cover\|stretch` | How the source fills the frame (default `contain`, preserves aspect). |
 | `--alpha-threshold 128` | Pixels below this alpha become transparent (crisp edges). |
