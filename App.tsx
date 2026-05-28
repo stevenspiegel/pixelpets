@@ -45,6 +45,8 @@ export default function App() {
     grantTokens,
     setWalletTokens,
     reloadCollection,
+    canBattleActive,
+    spendBattleEnergy,
     importablePets,
     importLocalPets,
     skipImport,
@@ -126,6 +128,8 @@ export default function App() {
         onReward={(amount) => grantTokens(amount)}
         onResult={view === 'pvp' ? recordPvpResult : undefined}
         onWalletChange={setWalletTokens}
+        onCanBattle={canBattleActive}
+        onSpendBattleEnergy={spendBattleEnergy}
         onExit={() => setView(null)}
       />
     );

@@ -414,6 +414,10 @@ export const DAILY_EARN_CAP = 60;
 export const EGG_COST = 150;
 const STARTING_TOKENS = EGG_COST;
 
+// Energy a single battle costs the active pet. Paces repeat battling: a pet at
+// full energy gets ~5 fights before it must rest, so it can't grind forever.
+export const BATTLE_ENERGY_COST = 20;
+
 // How much one training step raises each base stat.
 export const STAT_INCREMENT: Record<StatKey, number> = {
   attack: 1,
@@ -788,6 +792,33 @@ export const usePet = (userId: string | null) => {
     });
   }, []);
 
+  // Can the active pet start a battle right now? Pure check (no side effects)
+  // so it's safe to call before contacting the server / picking an opponent.
+  const canBattleActive = useCallback((): boolean => {
+    const c = colRef.current;
+    const active = c.pets.find((p) => p.id === c.activeId);
+    if (!active) return false;
+    const d = applyDecay(active, Date.now());
+    if (d.stage === 'egg' || d.stage === 'dead') return false;
+    return d.energy >= BATTLE_ENERGY_COST;
+  }, []);
+
+  // Charge the active pet's energy for one battle. Called once a fight actually
+  // begins; the debounced cloud sync then persists the lowered energy.
+  const spendBattleEnergy = useCallback(() => {
+    setCol((c) => {
+      const now = Date.now();
+      return {
+        ...c,
+        pets: c.pets.map((p) => {
+          if (p.id !== c.activeId) return p;
+          const d = applyDecay(p, now);
+          return { ...d, energy: clamp(d.energy - BATTLE_ENERGY_COST) };
+        }),
+      };
+    });
+  }, []);
+
   const act = useCallback((kind: ActionKind) => {
     const cloud = isSupabaseConfigured;
     // Decide up front (from the latest committed state) whether a play succeeds,
@@ -974,5 +1005,7 @@ export const usePet = (userId: string | null) => {
     importLocalPets,
     skipImport,
     act,
+    canBattleActive,
+    spendBattleEnergy,
   };
 };
