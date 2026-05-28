@@ -61,6 +61,31 @@ Requirements & caveats:
   img2img from the previous one where the Space supports it.
 - Speaks the modern Gradio 4.x+ `/call` protocol.
 
+### Enabling Hugging Face egress on Claude Code on the web
+
+`generate-hf.mjs` needs outbound network to Hugging Face. On the web, the
+sandbox blocks it by default (a boot-time egress proxy returns HTTP 403 for
+`huggingface.co` / `*.hf.space`). To run it in a web session:
+
+1. Edit the **environment's network policy** (Claude Code on the web → environment
+   config). Allow these hosts (or pick a less restrictive preset):
+   - `huggingface.co`
+   - `*.hf.space`  (Space app, Gradio `/call` endpoints, `/file=` outputs)
+   - `*.huggingface.co`  (CDN/file hosts some Spaces redirect to)
+   Docs: https://code.claude.com/docs/en/claude-code-on-the-web
+2. **Start a new session.** The container is ephemeral and applies the egress
+   policy at boot, so policy/env-var/setup-script changes only take effect in a
+   fresh session — the running one won't pick them up.
+3. Then live-test against a real Space, e.g.:
+   ```sh
+   node scripts/generate-hf.mjs --space owner/space --api-name /predict \
+     --prompt "pixel art fox, side profile, baby" --out /tmp/fox.png
+   ```
+   Once a Space is chosen, bake its `--api-name`/`--data` defaults into a wrapper
+   so they don't need to be passed each time.
+
+Running on your **local machine** needs none of this — HF is already reachable.
+
 ## Species map
 
 `scripts/species-map.json` maps each slug to its species emoji and controls the
