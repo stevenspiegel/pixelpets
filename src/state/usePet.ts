@@ -912,21 +912,6 @@ export const usePet = (userId: string | null) => {
     }));
   }, []);
 
-  // Manual recovery: scan the device for local pets and, if any are found,
-  // open the import screen — regardless of cloud state or the imported flag.
-  // Returns how many were found so the caller can message "none found".
-  const scanLocalPets = useCallback(async (): Promise<number> => {
-    const localPets = await findLocalPets();
-    if (localPets.length > 0) {
-      setImportable({
-        pets: localPets,
-        activeId: localPets[0].id,
-        wallet: colRef.current.wallet,
-      });
-    }
-    return localPets.length;
-  }, []);
-
   // Merge the found local pets into the current collection (keeping any pets
   // already in the cloud), then stop offering import. Capped at MAX_PETS.
   const importLocalPets = useCallback(() => {
@@ -986,7 +971,6 @@ export const usePet = (userId: string | null) => {
     setWalletTokens,
     reloadCollection,
     importablePetsCount: importable?.pets.length ?? 0,
-    scanLocalPets,
     importLocalPets,
     skipImport,
     act,
