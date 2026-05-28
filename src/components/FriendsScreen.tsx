@@ -7,6 +7,8 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
+  Alert,
+  Platform,
 } from 'react-native';
 import {
   Friend,
@@ -76,15 +78,30 @@ export const FriendsScreen: React.FC<Props> = ({ onExit }) => {
     refresh();
   };
 
+  const confirmUnfriend = (username: string, onConfirm: () => void) => {
+    const msg = `Unfriend @${username}? They'll have to send a new request to reconnect.`;
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      if (typeof window !== 'undefined' && window.confirm(msg)) onConfirm();
+      return;
+    }
+    Alert.alert('Unfriend?', msg, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Unfriend', style: 'destructive', onPress: onConfirm },
+    ]);
+  };
+
   if (selected) {
     return (
       <FriendProfile
         friend={selected}
         onBack={() => setSelected(null)}
-        onRemove={() => {
-          onRemove(selected.username);
-          setSelected(null);
-        }}
+        onRemove={() =>
+          confirmUnfriend(selected.username, () => {
+            onRemove(selected.username);
+            setSelected(null);
+          })
+        }
       />
     );
   }
