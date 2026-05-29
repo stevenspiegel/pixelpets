@@ -46,9 +46,9 @@ pixel art, <STAGE>, <SUBJECT>, full body from head to toe, entire animal visible
 | giraffe | 🦒 | 88 | `a giraffe, yellow coat with brown patches, long neck, small ossicone horns` |
 | tiger | 🐅 | 99 | `a tiger, orange fur, bold black stripes, white belly` |
 | elephant | 🐘 | 111 | `an elephant, grey skin, long trunk, large ears (small tusks if adult)` |
-| crocodile | 🐊 | 122 | `a crocodile, green scaly body, long snout, visible teeth, ridged back` |
-| octopus | 🐙 | 133 | `an octopus, purple round head, eight curling tentacles, big eyes` |
-| trex | 🦖 | 144 | `a tyrannosaurus rex dinosaur, green scaly body, big head and jaws, tiny arms, thick tail` |
+| crocodile | 🐊 | 222 | `a single crocodile, green scaly body, long snout, visible teeth, ridged back, lying low on the ground on four legs` (needs custom suffix — see note) |
+| octopus | 🐙 | 233 | `a cute cartoon octopus, bright vivid purple skin, eight curling tentacles, big round eyes` (custom suffix; colour still reads grey/blue, not purple) |
+| trex | 🦖 | 144 | `a tyrannosaurus rex dinosaur, green scaly body, big head and jaws, tiny arms, thick tail` — reworked at seed 244 with `standing on two legs` + full-body suffix |
 | merperson | 🧜 | 155 | `a merperson, human upper body, shimmering teal fish tail, flowing hair` |
 
 ### Worked example — fox (all four stages)
@@ -89,8 +89,20 @@ pixel art, fully grown adult, strong confident stance, full detailed markings, m
   SUBJECT with `side profile view of a <animal> standing on all fours` (fox is
   already set up this way; good candidates: tiger, crocodile, trex, kangaroo,
   giraffe). Front-on is fine for penguin, owl, sloth, octopus, merperson.
+- **Per-species framing (`gen-species.mjs --suffix`):** the default suffix
+  (`small in frame, wide shot, standing`) works for most, but a few subjects need
+  an override: **crocodile** scatters into multiple animals unless you force a
+  single low side-profile and drop "wide shot" (`--suffix "side view, full body,
+  one crocodile centered, low to the ground, ..."`); **octopus** shouldn't be
+  "standing" (`--suffix "full body, entire creature visible, centered, ..."`);
+  **trex** teen/adult collapse to blobs unless you say `standing on two legs` and
+  drop "small in frame". Reptilian/cephalopod colours stay muted (the LoRA won't
+  hold bright hues at CFG 1.5).
 - **Holes** (from `preview-sprite.mjs`): lower `--bg-tolerance` (try 30, then 20).
-  A thin background fringe instead: raise it (80).
+  A thin background fringe instead: raise it (80). The converter now also
+  auto-fills enclosed pinholes and despeckles, so most cutouts are clean by
+  default; low-contrast subjects (grey elephant, purple bat) work because the
+  flood-fill tolerance adapts to the backdrop's variance.
 - **Consistency:** keep the per-species seed fixed across stages; if a stage
   drifts off-model, bump that one stage's seed until it matches.
 - **Commit as you go** so finished sprites are saved:

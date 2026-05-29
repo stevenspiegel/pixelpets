@@ -34,8 +34,10 @@ const STAGE_MOD = {
   adult: 'fully grown adult, strong confident stance, full detailed markings, majestic',
 };
 // Framing suffix — mirrors scripts/comfyui/prompts.md. The negative prompt is
-// left as baked into the workflow (node 7) and NOT overridden here.
-const SUFFIX = 'full body from head to toe, entire animal visible, small in frame, wide shot, standing, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs';
+// left as baked into the workflow (node 7) and NOT overridden here. Override the
+// whole suffix per species with --suffix "<text>" (e.g. to drop "standing" for
+// an octopus, or "small in frame, wide shot" which makes some subjects scatter).
+const DEFAULT_SUFFIX = 'full body from head to toe, entire animal visible, small in frame, wide shot, standing, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs';
 
 // --- args -------------------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -53,6 +55,7 @@ if (!slug || !seedStr || !subject) {
 const seed = parseInt(seedStr, 10);
 const stages = (opts.stages ? opts.stages.split(',') : ['baby', 'child', 'teen', 'adult']).map((s) => s.trim());
 const tolerance = opts.tolerance || null;
+const SUFFIX = opts.suffix || DEFAULT_SUFFIX;
 
 const base = JSON.parse(fs.readFileSync(path.join(root, 'scripts/comfyui/pixelpet-sdxl-lora.json'), 'utf8'));
 
