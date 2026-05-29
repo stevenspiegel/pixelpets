@@ -500,6 +500,23 @@ grant execute on function public.hatch_pet(jsonb) to authenticated;
 -- Train one stat: the server reads the pet's current value, computes the cost,
 -- checks the balance, applies the increment + per-stage level cap, and deducts.
 -- Returns { stats, level, tokens }.
+-- Derive a pet's life stage from its IMMUTABLE born_at (clients cannot write
+-- born_at — it's absent from the pets update grant above), so the server never
+-- trusts the client-writable `stage` column when gating training/ascension.
+-- Thresholds mirror the client (src/state/usePet.ts STAGE_*_AT, seconds).
+create or replace function public._stage_from_born(p_born_at bigint)
+returns text language sql stable as $$
+  select case
+    when s < 30     then 'egg'
+    when s < 86400  then 'baby'
+    when s < 172800 then 'child'
+    when s < 259200 then 'teen'
+    else 'adult'
+  end
+  from (select ((extract(epoch from now()) * 1000)::bigint - p_born_at) / 1000.0 as s) t;
+$$;
+revoke execute on function public._stage_from_born(bigint) from public, anon, authenticated;
+
 create or replace function public.train_pet(p_pet_id text, p_stat text)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -520,7 +537,8 @@ begin
   select * into pet from public.pets where id = p_pet_id and owner = me;
   if pet.id is null then raise exception 'That pet is not yours'; end if;
   if pet.stage in ('egg', 'dead') then raise exception 'That pet cannot train now'; end if;
-  cap := case pet.stage
+  -- Cap keyed off the real (born_at-derived) stage, not the client `stage`.
+  cap := case public._stage_from_born(pet.born_at)
            when 'baby' then 10 when 'child' then 20
            when 'teen' then 35 when 'adult' then 50 else 0 end;
   if coalesce(pet.level, 1) >= cap then
@@ -726,7 +744,7 @@ begin
   select * into pet from public.pets where id = p_pet_id and owner = me;
   if pet.id is null then raise exception 'That pet is not yours'; end if;
   if pet.species not in ('🐉', '🦄') then raise exception 'This species cannot ascend'; end if;
-  if pet.stage <> 'adult' then raise exception 'Only adults can ascend'; end if;
+  if public._stage_from_born(pet.born_at) <> 'adult' then raise exception 'Only adults can ascend'; end if;
   if coalesce(pet.ascended, false) then raise exception 'Already ascended'; end if;
   update public.pets set ascended = true where id = p_pet_id;
 end; $$;
