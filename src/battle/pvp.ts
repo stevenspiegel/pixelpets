@@ -49,12 +49,6 @@ export const fetchPvpOpponent = async (): Promise<Combatant | null> => {
   return opponentFromRow(row);
 };
 
-export const recordPvpResult = async (won: boolean): Promise<void> => {
-  if (!supabase) return;
-  const { error } = await supabase.rpc('record_pvp_result', { won });
-  if (error) console.warn('[pixelpets] record pvp result error:', error.message);
-};
-
 // ── Turn-based server-resolved battles ────────────────────────────────────────
 // The server owns all battle state: start_battle creates a hidden battle row
 // with both sides' authoritative stats, and each battle_turn applies one round
