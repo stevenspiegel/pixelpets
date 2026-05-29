@@ -591,7 +591,10 @@ const loadCloudCollection = async (): Promise<Collection> => {
     supabase.from('pets').select('*').eq('owner', uid),
   ]);
   if (profileRes.error) console.warn('[pixelpets] load profile error:', profileRes.error.message);
-  if (petsRes.error) console.warn('[pixelpets] load pets error:', petsRes.error.message);
+  // A failed pets fetch must NOT be treated as "zero pets": returning an empty
+  // collection here let the debounced sync wipe every cloud pet. Fail loudly so
+  // callers keep the existing state instead of syncing emptiness.
+  if (petsRes.error) throw new Error(`load pets failed: ${petsRes.error.message}`);
   const profile = profileRes.data;
   const pets = (petsRes.data ?? []).map(petFromRow).map(migratePet);
   const wallet: Wallet = profile
@@ -616,31 +619,20 @@ const syncCloudCollection = async (col: Collection): Promise<void> => {
   const uid = sess.session?.user?.id;
   if (!uid) return;
 
-  if (col.pets.length > 0) {
-    // Pets are only ever created via RPC (hatch/adopt/import), so the client
-    // just UPDATEs care state of existing rows. An upsert would run the INSERT
-    // path, which fails the owner RLS check (petCareRow has no owner) and would
-    // silently leave the row frozen — including stage, blocking battles.
-    const updates = await Promise.all(
-      col.pets.map((p) => {
-        const { id, ...care } = petCareRow(p);
-        return supabase!.from('pets').update(care).eq('id', id).eq('owner', uid);
-      })
-    );
-    for (const u of updates) {
-      if (u.error) console.warn('[pixelpets] update pet error:', u.error.message);
-    }
-    // ids are alphanumeric/underscore only, so an unquoted list is safe.
-    const idList = col.pets.map((p) => p.id).join(',');
-    const del = await supabase
-      .from('pets')
-      .delete()
-      .eq('owner', uid)
-      .not('id', 'in', `(${idList})`);
-    if (del.error) console.warn('[pixelpets] prune pets error:', del.error.message);
-  } else {
-    const del = await supabase.from('pets').delete().eq('owner', uid);
-    if (del.error) console.warn('[pixelpets] clear pets error:', del.error.message);
+  // Update care state of existing pets ONLY. The client never inserts or deletes
+  // pets here — they are created and removed solely by server RPCs (hatch /
+  // adopt / import). A client-side delete used to wipe the WHOLE collection
+  // whenever this ran with an empty `col` (e.g. after a transient load error
+  // returned zero pets), so it has been removed entirely. An upsert is also
+  // avoided: its INSERT path fails the owner RLS check and would freeze the row.
+  const updates = await Promise.all(
+    col.pets.map((p) => {
+      const { id, ...care } = petCareRow(p);
+      return supabase!.from('pets').update(care).eq('id', id).eq('owner', uid);
+    })
+  );
+  for (const u of updates) {
+    if (u.error) console.warn('[pixelpets] update pet error:', u.error.message);
   }
 
   // Tokens / earn columns are server-owned now (changed only by the wallet
@@ -679,9 +671,18 @@ export const usePet = (userId: string | null) => {
     let cancelled = false;
     setLoaded(false);
     (async () => {
-      const loadedCol = isSupabaseConfigured
-        ? await loadCloudCollection()
-        : await loadCollection(userId);
+      let loadedCol: Collection;
+      try {
+        loadedCol = isSupabaseConfigured
+          ? await loadCloudCollection()
+          : await loadCollection(userId);
+      } catch (e) {
+        // Load failed: leave existing state untouched and stay "unloaded" so the
+        // sync effect never runs against an empty collection. A remount/refresh
+        // retries.
+        console.warn('[pixelpets] collection load failed:', (e as Error).message);
+        return;
+      }
       if (cancelled) return;
       setCol({
         pets: loadedCol.pets.map((p) => applyDecay(p, Date.now())),
@@ -786,7 +787,14 @@ export const usePet = (userId: string | null) => {
   // and to revert a rejected optimistic change. No-op in local-only mode.
   const reloadCollection = useCallback(async () => {
     if (!isSupabaseConfigured || !userRef.current) return;
-    const fresh = await loadCloudCollection();
+    let fresh: Collection;
+    try {
+      fresh = await loadCloudCollection();
+    } catch (e) {
+      // Don't overwrite local state with nothing if the reload fails.
+      console.warn('[pixelpets] reload failed, keeping current state:', (e as Error).message);
+      return;
+    }
     setCol({
       pets: fresh.pets.map((p) => applyDecay(p, Date.now())),
       activeId: fresh.activeId,
