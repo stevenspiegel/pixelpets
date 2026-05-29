@@ -841,57 +841,83 @@ export const usePet = (userId: string | null) => {
 
   const act = useCallback((kind: ActionKind) => {
     const cloud = isSupabaseConfigured;
-    // Decide up front (from the latest committed state) whether a play succeeds,
-    // so the cloud reward RPC can be fired as a side-effect.
-    let played = false;
-    if (kind === 'play') {
-      const c = colRef.current;
-      const active = c.pets.find((p) => p.id === c.activeId);
-      if (active) {
-        const d = applyDecay(active, Date.now());
-        played =
-          d.stage !== 'egg' && d.stage !== 'dead' && !d.asleep && d.energy >= 10;
-      }
+
+    // Cloud: every care action except ascension goes through care_action, which
+    // decays the pet, applies the action with server-enforced deltas, and (for
+    // 'play') credits the capped reward. Apply optimistically for a snappy UI,
+    // then reconcile to the authoritative pet the server returns.
+    if (cloud && kind !== 'ascend') {
+      const id = colRef.current.activeId;
+      if (!id) return;
+      setCol((c) => ({
+        ...c,
+        pets: c.pets.map((p) =>
+          p.id === id ? applyAction(p, kind, Date.now()) : p
+        ),
+      }));
+      (async () => {
+        const { data, error } = await supabase!.rpc('care_action', {
+          p_pet_id: id,
+          p_action: kind,
+        });
+        if (error) {
+          console.warn('[pixelpets] care error:', error.message);
+          await reloadCollection();
+          return;
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res = data as any;
+        const serverPet = applyDecay(petFromRow(res.pet), Date.now());
+        setCol((c) => ({
+          ...c,
+          pets: c.pets.map((p) => (p.id === id ? serverPet : p)),
+          wallet: { ...c.wallet, tokens: Number(res.tokens) },
+        }));
+      })();
+      return;
     }
+
+    // Local-only mode (no Supabase): apply the action and award play locally.
+    if (!cloud) {
+      setCol((c) => {
+        if (!c.activeId) return c;
+        const now = Date.now();
+        const active = c.pets.find((p) => p.id === c.activeId);
+        const pets = c.pets.map((p) =>
+          p.id === c.activeId ? applyAction(p, kind, now) : p
+        );
+        let wallet = c.wallet;
+        if (kind === 'play' && active) {
+          const d = applyDecay(active, now);
+          const ok =
+            d.stage !== 'egg' && d.stage !== 'dead' && !d.asleep && d.energy >= 10;
+          if (ok) wallet = awardTokens(c.wallet, PLAY_REWARD);
+        }
+        return { ...c, pets, wallet };
+      });
+      return;
+    }
+
+    // Cloud ascension: locked column, so apply optimistically then persist via
+    // the ascend_pet RPC; revert from the cloud if the server rejects.
     setCol((c) => {
       if (!c.activeId) return c;
-      const now = Date.now();
-      const active = c.pets.find((p) => p.id === c.activeId);
-      const pets = c.pets.map((p) =>
-        p.id === c.activeId ? applyAction(p, kind, now) : p
-      );
-      // Local mode awards play tokens here; cloud mode does it via RPC below so
-      // the server owns the balance and the daily cap.
-      let wallet = c.wallet;
-      if (!cloud && kind === 'play' && active) {
-        const d = applyDecay(active, now);
-        const ok =
-          d.stage !== 'egg' && d.stage !== 'dead' && !d.asleep && d.energy >= 10;
-        if (ok) wallet = awardTokens(c.wallet, PLAY_REWARD);
-      }
-      return { ...c, pets, wallet };
+      return {
+        ...c,
+        pets: c.pets.map((p) =>
+          p.id === c.activeId ? applyAction(p, kind, Date.now()) : p
+        ),
+      };
     });
-    if (cloud && played) {
+    const ascendId = colRef.current.activeId;
+    if (ascendId) {
       (async () => {
-        const { data, error } = await supabase!.rpc('earn_play_tokens');
-        if (!error && data != null) {
-          setCol((c) => ({ ...c, wallet: { ...c.wallet, tokens: Number(data) } }));
+        const { error } = await supabase!.rpc('ascend_pet', { p_pet_id: ascendId });
+        if (error) {
+          console.warn('[pixelpets] ascend error:', error.message);
+          await reloadCollection();
         }
       })();
-    }
-    // Ascension is now a locked column, so persist it via RPC (the setCol above
-    // applied it optimistically). Revert from the cloud if the server rejects.
-    if (cloud && kind === 'ascend') {
-      const id = colRef.current.activeId;
-      if (id) {
-        (async () => {
-          const { error } = await supabase!.rpc('ascend_pet', { p_pet_id: id });
-          if (error) {
-            console.warn('[pixelpets] ascend error:', error.message);
-            await reloadCollection();
-          }
-        })();
-      }
     }
   }, [reloadCollection]);
 
