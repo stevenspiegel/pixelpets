@@ -759,6 +759,128 @@ grant update (
   last_tick, asleep, poops, sick
 ) on public.pets to authenticated;
 
+-- ── Server-authoritative pet care (Phase 1: additive) ─────────────────────────
+-- Moves care decay + actions server-side so clients can't set health/energy/etc.
+-- to arbitrary values. PHASE 1 is purely additive: these RPCs exist alongside
+-- the existing client-side writes (the care UPDATE grant above stays for now).
+-- Phase 2 will revoke that grant so care_action() is the ONLY way to change care
+-- state. The math here MUST stay in sync with src/state/usePet.ts applyDecay/
+-- applyAction (drain rates, offline scaling, sickness, action deltas).
+
+-- Recompute a pet's care state from (now - last_tick), mirroring applyDecay.
+-- Pure helper (no auth); returns the decayed row without persisting.
+create or replace function public._decay_pet_row(pet public.pets)
+returns public.pets
+language plpgsql as $$
+declare
+  now_ms    bigint := (extract(epoch from now()) * 1000)::bigint;
+  raw       double precision := greatest(0, (now_ms - pet.last_tick) / 1000.0);
+  scaled    double precision;
+  sm        double precision := case when pet.asleep then 0.25 else 1 end;
+  hd        double precision := 0;
+begin
+  if pet.stage = 'dead' or raw < 0.5 then return pet; end if;
+  -- offline scaling: real time up to 30s, then 10% (scaleElapsed)
+  scaled := case when raw <= 30 then raw else 30 + (raw - 30) * 0.1 end;
+
+  pet.age := pet.age + raw;
+  pet.stage := case
+    when pet.age < 30     then 'egg'
+    when pet.age < 86400  then 'baby'
+    when pet.age < 172800 then 'child'
+    when pet.age < 259200 then 'teen'
+    else 'adult' end;
+  if pet.stage = 'egg' then pet.last_tick := now_ms; return pet; end if;
+
+  pet.hunger      := greatest(0, least(100, pet.hunger      - scaled * 0.01  * sm));
+  pet.happiness   := greatest(0, least(100, pet.happiness   - scaled * 0.008 * sm));
+  pet.cleanliness := greatest(0, least(100, pet.cleanliness - scaled * 0.005));
+  pet.energy := case when pet.asleep
+    then least(100, pet.energy + scaled * 0.2)
+    else greatest(0, pet.energy - scaled * 0.007) end;
+
+  if not pet.asleep then pet.poops := least(pet.poops + scaled / 3600.0, 8); end if;
+  if floor(pet.poops) >= 2 and not pet.sick
+     and random() < (1 - exp(-scaled * 0.0002)) then
+    pet.sick := true;
+  end if;
+
+  if pet.hunger      <= 0 then hd := hd - scaled * 0.012; end if;
+  if pet.happiness   <= 0 then hd := hd - scaled * 0.006; end if;
+  if pet.cleanliness <= 0 then hd := hd - scaled * 0.005; end if;
+  if pet.sick             then hd := hd - scaled * 0.008; end if;
+  if pet.hunger > 60 and pet.happiness > 60 and pet.cleanliness > 60 and not pet.sick then
+    hd := hd + scaled * 0.003;
+  end if;
+  pet.health := greatest(0, least(100, pet.health + hd));
+  if pet.health <= 0 then pet.stage := 'dead'; pet.asleep := false; end if;
+
+  pet.last_tick := now_ms;
+  return pet;
+end; $$;
+revoke execute on function public._decay_pet_row(public.pets) from public, anon, authenticated;
+
+-- One entry point for all care: bring the pet current (decay), apply the action
+-- with server-enforced deltas, persist, and return the updated pet (+ any token
+-- reward). action ∈ feed|play|clean|sleep|wake|medicine|tick. 'play' also awards
+-- the capped play reward (mirrors earn_play_tokens), so it can't be double-paid.
+create or replace function public.care_action(p_pet_id text, p_action text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me     uuid := auth.uid();
+  pet    public.pets%rowtype;
+  reward integer := 0;
+  today  text := to_char((now() at time zone 'utc'), 'YYYY-MM-DD');
+  used   integer;
+  bal    integer;
+begin
+  if p_action not in ('feed','play','clean','sleep','wake','medicine','tick') then
+    raise exception 'Unknown care action %', p_action;
+  end if;
+  select * into pet from public.pets where id = p_pet_id and owner = me for update;
+  if pet.id is null then raise exception 'That pet is not yours'; end if;
+
+  pet := public._decay_pet_row(pet);  -- bring care state current
+
+  if pet.stage not in ('dead', 'egg') then
+    if p_action = 'feed' and not pet.asleep then
+      pet.hunger      := least(100, pet.hunger + 28);
+      pet.cleanliness := greatest(0, pet.cleanliness - 4);
+      pet.happiness   := least(100, pet.happiness + 3);
+    elsif p_action = 'play' and not pet.asleep and pet.energy >= 10 then
+      pet.happiness := least(100, pet.happiness + 22);
+      pet.energy    := greatest(0, pet.energy - 12);
+      pet.hunger    := greatest(0, pet.hunger - 4);
+      select case when earn_date = today then earned_today else 0 end into used
+        from public.profiles where id = me for update;
+      reward := greatest(0, least(3, 60 - used));   -- PLAY_REWARD, DAILY_EARN_CAP
+      update public.profiles
+        set tokens = tokens + reward, earn_date = today, earned_today = used + reward
+        where id = me;
+      perform public._daily_bump('played');
+    elsif p_action = 'clean' then
+      pet.cleanliness := least(100, pet.cleanliness + 35);
+      pet.poops := 0;
+    elsif p_action = 'sleep' then pet.asleep := true;
+    elsif p_action = 'wake'  then pet.asleep := false;
+    elsif p_action = 'medicine' then
+      pet.sick := false;
+      pet.health := least(100, pet.health + 15);
+    end if;
+  end if;
+
+  update public.pets set
+    hunger = pet.hunger, happiness = pet.happiness, cleanliness = pet.cleanliness,
+    energy = pet.energy, health = pet.health, age = pet.age, stage = pet.stage,
+    asleep = pet.asleep, poops = pet.poops, sick = pet.sick, last_tick = pet.last_tick
+  where id = pet.id;
+
+  select tokens into bal from public.profiles where id = me;
+  return jsonb_build_object('pet', to_jsonb(pet), 'reward', reward, 'tokens', bal);
+end; $$;
+grant execute on function public.care_action(text, text) to authenticated;
+
 -- ── Server-authoritative turn-based battles (anti-cheat) ──────────────────────
 -- Battles are resolved one turn at a time, entirely server-side. start_battle
 -- creates a hidden battle row holding both sides' authoritative effective stats
