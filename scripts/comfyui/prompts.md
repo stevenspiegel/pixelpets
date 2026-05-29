@@ -30,7 +30,7 @@ pixel art, <STAGE>, <SUBJECT>, side profile, full body, centered, simple flat so
 ### SUBJECT per species
 | slug | emoji | seed | SUBJECT |
 |------|-------|------|---------|
-| fox | 🦊 | 11 | `a fox, orange fur, white belly, white-tipped bushy tail, pointed ears` |
+| fox | 🦊 | 12 | `a fox, orange fur, white belly, white-tipped bushy tail, pointed ears` |
 | bat | 🦇 | 22 | `a bat, purple-grey fur, big membrane wings, large ears, tiny fangs` |
 | penguin | 🐧 | 33 | `a penguin, black back, white belly, orange beak and feet` |
 | sloth | 🦥 | 44 | `a sloth, shaggy brown fur, long arms, dark eye patches, sleepy smile` |
