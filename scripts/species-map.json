@@ -1,0 +1,31 @@
+{
+  "_comment": "slug <-> species emoji map for the sprite pipeline. make-sprite.mjs resolves --slug to an emoji here; wire-sprites.mjs uses it to (re)generate IMAGE_SPRITES in src/sprites/images.ts. Order controls the order entries appear in images.ts. 'ascended' true => the post-adult form is allowed (dragon/unicorn). Only species that actually have PNG files in assets/sprites/ are emitted.",
+  "species": [
+    { "slug": "turtle",    "emoji": "🐢" },
+    { "slug": "dragon",    "emoji": "🐉", "ascended": true },
+    { "slug": "shark",     "emoji": "🦈" },
+    { "slug": "beaver",    "emoji": "🦫" },
+    { "slug": "hedgehog",  "emoji": "🦔" },
+    { "slug": "lizard",    "emoji": "🦎" },
+    { "slug": "dog",       "emoji": "🐕" },
+    { "slug": "cat",       "emoji": "🐈" },
+    { "slug": "snake",     "emoji": "🐍" },
+    { "slug": "rabbit",    "emoji": "🐇" },
+    { "slug": "unicorn",   "emoji": "🦄", "ascended": true },
+
+    { "slug": "fox",       "emoji": "🦊" },
+    { "slug": "bat",       "emoji": "🦇" },
+    { "slug": "penguin",   "emoji": "🐧" },
+    { "slug": "sloth",     "emoji": "🦥" },
+    { "slug": "owl",       "emoji": "🦉" },
+    { "slug": "eagle",     "emoji": "🦅" },
+    { "slug": "kangaroo",  "emoji": "🦘" },
+    { "slug": "giraffe",   "emoji": "🦒" },
+    { "slug": "tiger",     "emoji": "🐅" },
+    { "slug": "elephant",  "emoji": "🐘" },
+    { "slug": "crocodile", "emoji": "🐊" },
+    { "slug": "octopus",   "emoji": "🐙" },
+    { "slug": "trex",      "emoji": "🦖" },
+    { "slug": "merperson", "emoji": "🧜" }
+  ]
+}

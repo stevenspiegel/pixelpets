@@ -77,6 +77,90 @@ export const IMAGE_SPRITES: Record<string, StageImages> = {
     adult: require('../../assets/sprites/unicorn-adult.png'),
     ascended: require('../../assets/sprites/unicorn-ascended.png'),
   },
+  '🦊': {
+    baby: require('../../assets/sprites/fox-baby.png'),
+    child: require('../../assets/sprites/fox-child.png'),
+    teen: require('../../assets/sprites/fox-teen.png'),
+    adult: require('../../assets/sprites/fox-adult.png'),
+  },
+  '🦇': {
+    baby: require('../../assets/sprites/bat-baby.png'),
+    child: require('../../assets/sprites/bat-child.png'),
+    teen: require('../../assets/sprites/bat-teen.png'),
+    adult: require('../../assets/sprites/bat-adult.png'),
+  },
+  '🐧': {
+    baby: require('../../assets/sprites/penguin-baby.png'),
+    child: require('../../assets/sprites/penguin-child.png'),
+    teen: require('../../assets/sprites/penguin-teen.png'),
+    adult: require('../../assets/sprites/penguin-adult.png'),
+  },
+  '🦥': {
+    baby: require('../../assets/sprites/sloth-baby.png'),
+    child: require('../../assets/sprites/sloth-child.png'),
+    teen: require('../../assets/sprites/sloth-teen.png'),
+    adult: require('../../assets/sprites/sloth-adult.png'),
+  },
+  '🦉': {
+    baby: require('../../assets/sprites/owl-baby.png'),
+    child: require('../../assets/sprites/owl-child.png'),
+    teen: require('../../assets/sprites/owl-teen.png'),
+    adult: require('../../assets/sprites/owl-adult.png'),
+  },
+  '🦅': {
+    baby: require('../../assets/sprites/eagle-baby.png'),
+    child: require('../../assets/sprites/eagle-child.png'),
+    teen: require('../../assets/sprites/eagle-teen.png'),
+    adult: require('../../assets/sprites/eagle-adult.png'),
+  },
+  '🦘': {
+    baby: require('../../assets/sprites/kangaroo-baby.png'),
+    child: require('../../assets/sprites/kangaroo-child.png'),
+    teen: require('../../assets/sprites/kangaroo-teen.png'),
+    adult: require('../../assets/sprites/kangaroo-adult.png'),
+  },
+  '🦒': {
+    baby: require('../../assets/sprites/giraffe-baby.png'),
+    child: require('../../assets/sprites/giraffe-child.png'),
+    teen: require('../../assets/sprites/giraffe-teen.png'),
+    adult: require('../../assets/sprites/giraffe-adult.png'),
+  },
+  '🐅': {
+    baby: require('../../assets/sprites/tiger-baby.png'),
+    child: require('../../assets/sprites/tiger-child.png'),
+    teen: require('../../assets/sprites/tiger-teen.png'),
+    adult: require('../../assets/sprites/tiger-adult.png'),
+  },
+  '🐘': {
+    baby: require('../../assets/sprites/elephant-baby.png'),
+    child: require('../../assets/sprites/elephant-child.png'),
+    teen: require('../../assets/sprites/elephant-teen.png'),
+    adult: require('../../assets/sprites/elephant-adult.png'),
+  },
+  '🐊': {
+    baby: require('../../assets/sprites/crocodile-baby.png'),
+    child: require('../../assets/sprites/crocodile-child.png'),
+    teen: require('../../assets/sprites/crocodile-teen.png'),
+    adult: require('../../assets/sprites/crocodile-adult.png'),
+  },
+  '🐙': {
+    baby: require('../../assets/sprites/octopus-baby.png'),
+    child: require('../../assets/sprites/octopus-child.png'),
+    teen: require('../../assets/sprites/octopus-teen.png'),
+    adult: require('../../assets/sprites/octopus-adult.png'),
+  },
+  '🦖': {
+    baby: require('../../assets/sprites/trex-baby.png'),
+    child: require('../../assets/sprites/trex-child.png'),
+    teen: require('../../assets/sprites/trex-teen.png'),
+    adult: require('../../assets/sprites/trex-adult.png'),
+  },
+  '🧜': {
+    baby: require('../../assets/sprites/merperson-baby.png'),
+    child: require('../../assets/sprites/merperson-child.png'),
+    teen: require('../../assets/sprites/merperson-teen.png'),
+    adult: require('../../assets/sprites/merperson-adult.png'),
+  },
 };
 
 export const imageSpriteFor = (

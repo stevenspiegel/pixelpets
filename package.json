@@ -6,7 +6,10 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "sprite": "node scripts/make-sprite.mjs",
+    "sprite:generate": "node scripts/generate-hf.mjs",
+    "sprite:wire": "node scripts/wire-sprites.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",

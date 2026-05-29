@@ -1,0 +1,3 @@
+# Raw ComfyUI renders are large intermediates; the cut sprites live in
+# assets/sprites/. Don't track the renders.
+*.png
