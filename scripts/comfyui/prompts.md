@@ -10,7 +10,7 @@ instruction. Stages per species: **baby → child → teen → adult** (no `asce
 Build each **positive** prompt as:
 
 ```
-pixel art, <STAGE>, <SUBJECT>, side profile, full body, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs
+pixel art, <STAGE>, <SUBJECT>, full body from head to toe, entire animal visible, small in frame, wide shot, standing, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs
 ```
 
 - **Background / cutout:** render on the model's default flat backdrop (it
@@ -36,7 +36,7 @@ pixel art, <STAGE>, <SUBJECT>, side profile, full body, centered, simple flat so
 ### SUBJECT per species
 | slug | emoji | seed | SUBJECT |
 |------|-------|------|---------|
-| fox | 🦊 | 12 | `a fox, orange fur, white belly, white-tipped bushy tail, pointed ears` |
+| fox | 🦊 | 12 | `side profile view of a fox standing on all fours, orange fur, white belly, white-tipped bushy tail, pointed ears` |
 | bat | 🦇 | 22 | `a bat, purple-grey fur, big membrane wings, large ears, tiny fangs` |
 | penguin | 🐧 | 33 | `a penguin, black back, white belly, orange beak and feet` |
 | sloth | 🦥 | 44 | `a sloth, shaggy brown fur, long arms, dark eye patches, sleepy smile` |
@@ -53,10 +53,10 @@ pixel art, <STAGE>, <SUBJECT>, side profile, full body, centered, simple flat so
 
 ### Worked example — fox (all four stages)
 ```
-pixel art, newborn baby, tiny chibi body, big round head, oversized eyes, soft and round, adorable, a fox, orange fur, white belly, white-tipped bushy tail, pointed ears, side profile, full body, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs
-pixel art, young, small body, slightly longer limbs, playful, cute proportions, a fox, orange fur, white belly, white-tipped bushy tail, pointed ears, side profile, full body, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs
-pixel art, adolescent, taller and lankier, lean, growing into adult features, a fox, orange fur, white belly, white-tipped bushy tail, pointed ears, side profile, full body, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs
-pixel art, fully grown adult, strong confident stance, full detailed markings, majestic, a fox, orange fur, white belly, white-tipped bushy tail, pointed ears, side profile, full body, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs
+pixel art, newborn baby, tiny chibi body, big round head, oversized eyes, soft and round, adorable, side profile view of a fox standing on all fours, orange fur, white belly, white-tipped bushy tail, pointed ears, full body from head to toe, entire animal visible, small in frame, wide shot, standing, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs
+pixel art, young, small body, slightly longer limbs, playful, cute proportions, side profile view of a fox standing on all fours, orange fur, white belly, white-tipped bushy tail, pointed ears, full body from head to toe, entire animal visible, small in frame, wide shot, standing, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs
+pixel art, adolescent, taller and lankier, lean, growing into adult features, side profile view of a fox standing on all fours, orange fur, white belly, white-tipped bushy tail, pointed ears, full body from head to toe, entire animal visible, small in frame, wide shot, standing, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs
+pixel art, fully grown adult, strong confident stance, full detailed markings, majestic, side profile view of a fox standing on all fours, orange fur, white belly, white-tipped bushy tail, pointed ears, full body from head to toe, entire animal visible, small in frame, wide shot, standing, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs
 ```
 
 ## Batch instruction (paste into local Claude Code)
@@ -80,6 +80,15 @@ pixel art, fully grown adult, strong confident stance, full detailed markings, m
 > good, move to the next.
 
 ## Tips
+- **Framing:** the template forces *full body, wide shot, small in frame* and the
+  workflow negative blocks *close-up/portrait/face only* — so renders should show
+  the whole animal, not a head. If one still comes out as a face, regenerate with
+  a new seed.
+- **Orientation:** the set is mixed (dog is front-on, dragon/turtle are side
+  profile), so pick what reads best per animal. For a **side profile**, start the
+  SUBJECT with `side profile view of a <animal> standing on all fours` (fox is
+  already set up this way; good candidates: tiger, crocodile, trex, kangaroo,
+  giraffe). Front-on is fine for penguin, owl, sloth, octopus, merperson.
 - **Holes** (from `preview-sprite.mjs`): lower `--bg-tolerance` (try 30, then 20).
   A thin background fringe instead: raise it (80).
 - **Consistency:** keep the per-species seed fixed across stages; if a stage
