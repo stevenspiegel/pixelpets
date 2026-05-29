@@ -89,6 +89,12 @@ export const IMAGE_SPRITES: Record<string, StageImages> = {
     teen: require('../../assets/sprites/bat-teen.png'),
     adult: require('../../assets/sprites/bat-adult.png'),
   },
+  '🐧': {
+    baby: require('../../assets/sprites/penguin-baby.png'),
+    child: require('../../assets/sprites/penguin-child.png'),
+    teen: require('../../assets/sprites/penguin-teen.png'),
+    adult: require('../../assets/sprites/penguin-adult.png'),
+  },
 };
 
 export const imageSpriteFor = (
