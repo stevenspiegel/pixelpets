@@ -240,6 +240,66 @@ export function resample(src, sw, sh, dw, dh) {
   return out;
 }
 
+// Remove stray opaque islands (background remnants like kept shadows) by
+// labelling connected opaque components and clearing any smaller than
+// `minFracOfLargest` of the biggest one. Keeps the subject (and any substantial
+// detached part) while dropping specks.
+export function removeSpecks(rgba, w, h, alphaThreshold = 1, minFracOfLargest = 0.02) {
+  const n = w * h;
+  const label = new Int32Array(n).fill(-1);
+  const opaque = (p) => rgba[p * 4 + 3] >= alphaThreshold;
+  const sizes = [];
+  const stack = [];
+  for (let s = 0; s < n; s++) {
+    if (label[s] !== -1 || !opaque(s)) continue;
+    const id = sizes.length; let size = 0; label[s] = id; stack.push(s);
+    while (stack.length) {
+      const p = stack.pop(); size++;
+      const x = p % w, y = (p / w) | 0;
+      if (x > 0 && label[p - 1] === -1 && opaque(p - 1)) { label[p - 1] = id; stack.push(p - 1); }
+      if (x < w - 1 && label[p + 1] === -1 && opaque(p + 1)) { label[p + 1] = id; stack.push(p + 1); }
+      if (y > 0 && label[p - w] === -1 && opaque(p - w)) { label[p - w] = id; stack.push(p - w); }
+      if (y < h - 1 && label[p + w] === -1 && opaque(p + w)) { label[p + w] = id; stack.push(p + w); }
+    }
+    sizes.push(size);
+  }
+  if (sizes.length <= 1) return;
+  let largest = 0;
+  for (const s of sizes) if (s > largest) largest = s;
+  const minSize = largest * minFracOfLargest;
+  for (let p = 0; p < n; p++) {
+    const id = label[p];
+    if (id >= 0 && sizes[id] < minSize) rgba[p * 4 + 3] = 0;
+  }
+}
+
+// Crop to the subject's bounding box (pixels with alpha >= threshold), adding a
+// small proportional margin. Run after background removal so the subject fills
+// the sprite frame instead of floating tiny inside the render's empty margins.
+export function trimToContent(rgba, w, h, alphaThreshold = 1, padFrac = 0.06) {
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (rgba[(y * w + x) * 4 + 3] >= alphaThreshold) {
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return { rgba, width: w, height: h }; // fully transparent: leave as-is
+  const bw = maxX - minX + 1, bh = maxY - minY + 1;
+  const pad = Math.round(Math.max(bw, bh) * padFrac);
+  const x0 = Math.max(0, minX - pad), y0 = Math.max(0, minY - pad);
+  const x1 = Math.min(w - 1, maxX + pad), y1 = Math.min(h - 1, maxY + pad);
+  const nw = x1 - x0 + 1, nh = y1 - y0 + 1;
+  const out = new Uint8Array(nw * nh * 4);
+  for (let y = 0; y < nh; y++) {
+    const srcRow = ((y0 + y) * w + x0) * 4;
+    out.set(rgba.subarray(srcRow, srcRow + nw * 4), y * nw * 4);
+  }
+  return { rgba: out, width: nw, height: nh };
+}
+
 // Fit src into a size×size transparent canvas. mode: contain|cover|stretch.
 export function fitToCanvas(src, sw, sh, size, mode = 'contain') {
   let scale;

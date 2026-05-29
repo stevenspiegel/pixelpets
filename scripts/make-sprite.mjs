@@ -18,6 +18,9 @@
 //   --stage <name>        baby | child | teen | adult | ascended. Required.
 //   --species <emoji>     Register/override the slug -> emoji mapping.
 //   --size <n>            Output size in px (default 64, square).
+//   --trim                Crop to the subject before fitting so it fills the
+//                         64×64 frame (recommended for AI renders with margins;
+//                         also auto-drops stray background specks).
 //   --fit contain|cover|stretch   How to fit the source (default contain).
 //   --autobg              Auto-remove the background by flood-fill from the
 //                         edges (best for AI renders on a flat backdrop; no
@@ -31,7 +34,7 @@ import path from 'path';
 import url from 'url';
 import {
   decodePng, encodePng, fitToCanvas, keyOutBackground, removeBackgroundFlood,
-  quantizeToPalette, loadPalette, loadRegistry, STAGES,
+  removeSpecks, trimToContent, quantizeToPalette, loadPalette, loadRegistry, STAGES,
 } from './sprite-lib.mjs';
 import { wireSprites } from './wire-sprites.mjs';
 
@@ -106,10 +109,14 @@ try {
 } catch (e) {
   fail(`could not read PNG (${e.message}). Re-export as a non-interlaced PNG and try again.`);
 }
-const { width, height, rgba } = decoded;
+let { width, height, rgba } = decoded;
 
 if (args.autobg) removeBackgroundFlood(rgba, width, height, args['bg-tolerance'] ? bgTolerance : 60);
 else if (args.bg) keyOutBackground(rgba, args.bg, bgTolerance);
+// After background removal, drop stray islands (kept shadows etc.).
+if (args.autobg || args.bg) removeSpecks(rgba, width, height);
+// Crop to the subject so it fills the frame (not lost in the render's margins).
+if (args.trim) { const t = trimToContent(rgba, width, height); rgba = t.rgba; width = t.width; height = t.height; }
 const framed = fitToCanvas(rgba, width, height, size, fit);
 quantizeToPalette(framed, palette, alphaThreshold);
 

@@ -63,8 +63,9 @@ pixel art, fully grown adult, strong confident stance, full detailed markings, m
 >
 > For each one: enqueue `scripts/comfyui/pixelpet-sdxl-lora.json` via the comfyui
 > MCP (override the positive `text` and `seed`), wait for completion, then run
-> `npm run sprite -- --in "<output png>" --slug <slug> --stage <stage> --autobg`,
+> `npm run sprite -- --in "<output png>" --slug <slug> --stage <stage> --autobg --trim`,
 > then `node scripts/preview-sprite.mjs assets/sprites/<slug>-<stage>.png`.
+> (`--trim` crops the subject so it fills the 64×64 frame and drops stray specks.)
 >
 > **Start with fox/baby only and show me the preview + holes count. Wait for my
 > OK before continuing the rest.** If a sprite has interior holes, retry the
