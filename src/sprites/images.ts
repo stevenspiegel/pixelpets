@@ -137,6 +137,24 @@ export const IMAGE_SPRITES: Record<string, StageImages> = {
     teen: require('../../assets/sprites/elephant-teen.png'),
     adult: require('../../assets/sprites/elephant-adult.png'),
   },
+  '🐊': {
+    baby: require('../../assets/sprites/crocodile-baby.png'),
+    child: require('../../assets/sprites/crocodile-child.png'),
+    teen: require('../../assets/sprites/crocodile-teen.png'),
+    adult: require('../../assets/sprites/crocodile-adult.png'),
+  },
+  '🐙': {
+    baby: require('../../assets/sprites/octopus-baby.png'),
+    child: require('../../assets/sprites/octopus-child.png'),
+    teen: require('../../assets/sprites/octopus-teen.png'),
+    adult: require('../../assets/sprites/octopus-adult.png'),
+  },
+  '🦖': {
+    baby: require('../../assets/sprites/trex-baby.png'),
+    child: require('../../assets/sprites/trex-child.png'),
+    teen: require('../../assets/sprites/trex-teen.png'),
+    adult: require('../../assets/sprites/trex-adult.png'),
+  },
   '🧜': {
     baby: require('../../assets/sprites/merperson-baby.png'),
     child: require('../../assets/sprites/merperson-child.png'),
