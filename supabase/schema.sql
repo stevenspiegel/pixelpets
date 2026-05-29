@@ -167,6 +167,10 @@ $$;
 grant execute on function public.get_random_opponent() to authenticated;
 
 -- Record a PvP result for the caller (atomic increment).
+-- SUPERSEDED by battle_turn (which writes the PvP record server-side after a
+-- real, server-resolved fight). Left defined for history but execute is REVOKED
+-- from clients: granting it let anyone forge unlimited leaderboard wins via
+-- rpc('record_pvp_result', { won: true }).
 create or replace function public.record_pvp_result(won boolean)
 returns void
 language sql security definer set search_path = public as $$
@@ -175,7 +179,7 @@ language sql security definer set search_path = public as $$
       pvp_losses = pvp_losses + (case when won then 0 else 1 end)
   where id = auth.uid();
 $$;
-grant execute on function public.record_pvp_result(boolean) to authenticated;
+revoke execute on function public.record_pvp_result(boolean) from public, anon, authenticated;
 
 -- Top PvP players.
 create or replace function public.pvp_leaderboard()
@@ -577,7 +581,11 @@ begin
     returning tokens into bal;
   return bal;
 end; $$;
-grant execute on function public.claim_battle_reward(integer) to authenticated;
+-- SUPERSEDED by battle_turn (which credits the win reward server-side only after
+-- a real, server-resolved battle). Execute is REVOKED from clients: granting it
+-- let anyone mint tokens with rpc('claim_battle_reward', { p_enemy_level: 50 })
+-- in a loop — no battle required, no daily cap.
+revoke execute on function public.claim_battle_reward(integer) from public, anon, authenticated;
 
 -- Legacy migration: insert local pets into the cloud (owner = caller), skipping
 -- any that already exist and capping the collection at 8. Used by the one-time
