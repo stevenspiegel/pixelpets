@@ -9,7 +9,9 @@
 //   node scripts/fill-holes.mjs assets/sprites/bat-*.png --color ffffff
 //
 // Options:
-//   --color <rrggbb>      Fill colour (default ffffff = white).
+//   --color <rrggbb>      Fill colour (default ffffff = white). Good for eye-whites.
+//   --inpaint             Instead of a fixed colour, fill each enclosed pixel
+//                         with its surrounding colour (handles dark eyes, etc.).
 //   --alpha-threshold <n> Alpha below this counts as transparent (default 128).
 //
 // NOTE: this assumes every enclosed gap should become <color>. That's right for
@@ -22,10 +24,12 @@ const argv = process.argv.slice(2);
 const files = [];
 let color = 'ffffff';
 let alphaThreshold = 128;
+let inpaint = false;
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--color') color = argv[++i].replace('#', '');
   else if (a === '--alpha-threshold') alphaThreshold = parseInt(argv[++i], 10);
+  else if (a === '--inpaint') inpaint = true;
   else files.push(a);
 }
 if (files.length === 0) {
@@ -53,16 +57,44 @@ for (const file of files) {
     const x = p % w, y = (p / w) | 0;
     seed(x + 1, y); seed(x - 1, y); seed(x, y + 1); seed(x, y - 1);
   }
+  const holes = [];
+  for (let p = 0; p < w * h; p++) if (isT(p) && !reach[p]) holes.push(p);
+
   let filled = 0;
-  for (let p = 0; p < w * h; p++) {
-    if (isT(p) && !reach[p]) {
+  if (inpaint) {
+    // Fill each enclosed pixel with a neighbouring opaque colour, iterating so
+    // multi-pixel regions fill inward from their edges. Matches dark eyes etc.
+    let remaining = holes.slice();
+    while (remaining.length) {
+      const next = [];
+      let progressed = false;
+      for (const p of remaining) {
+        const x = p % w, y = (p / w) | 0;
+        let done = false;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const np = ny * w + nx;
+          if (rgba[np * 4 + 3] >= alphaThreshold) {
+            rgba[p * 4] = rgba[np * 4]; rgba[p * 4 + 1] = rgba[np * 4 + 1];
+            rgba[p * 4 + 2] = rgba[np * 4 + 2]; rgba[p * 4 + 3] = 255;
+            filled++; done = true; progressed = true; break;
+          }
+        }
+        if (!done) next.push(p);
+      }
+      if (!progressed) break;
+      remaining = next;
+    }
+  } else {
+    for (const p of holes) {
       rgba[p * 4] = fr; rgba[p * 4 + 1] = fg; rgba[p * 4 + 2] = fb; rgba[p * 4 + 3] = 255;
       filled++;
     }
   }
   if (filled > 0) {
     fs.writeFileSync(abs, encodePng(w, h, rgba));
-    console.log(`${file}: filled ${filled} enclosed pixel(s) with #${color}`);
+    console.log(`${file}: filled ${filled} enclosed pixel(s) ${inpaint ? 'by inpainting (neighbour colour)' : `with #${color}`}`);
   } else {
     console.log(`${file}: no enclosed holes — unchanged`);
   }
