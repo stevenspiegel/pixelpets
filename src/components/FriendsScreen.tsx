@@ -69,12 +69,28 @@ export const FriendsScreen: React.FC<Props> = ({ onExit }) => {
   };
 
   const onRespond = async (fromUser: string, accept: boolean) => {
-    await respondFriendRequest(fromUser, accept);
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await respondFriendRequest(fromUser, accept);
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
     refresh();
   };
 
   const onRemove = async (username: string) => {
-    await removeFriend(username);
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await removeFriend(username);
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
     refresh();
   };
 

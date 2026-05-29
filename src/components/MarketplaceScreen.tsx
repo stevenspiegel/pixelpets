@@ -106,7 +106,12 @@ export const MarketplaceScreen: React.FC<Props> = ({
     setBusy(true);
     setError(null);
     setNotice(null);
-    await cancelListing(petId);
+    const res = await cancelListing(petId);
+    if (!res.ok) {
+      setError(res.error);
+      setBusy(false);
+      return;
+    }
     await refresh();
     setBusy(false);
   };

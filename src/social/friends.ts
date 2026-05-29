@@ -54,19 +54,21 @@ export const listFriendRequests = async (): Promise<string[]> => {
 export const respondFriendRequest = async (
   fromUsername: string,
   accept: boolean
-): Promise<void> => {
-  if (!supabase) return;
+): Promise<Result> => {
+  if (!supabase) return { ok: false, error: 'Not connected' };
   const { error } = await supabase.rpc('respond_friend_request', {
     from_user: fromUsername,
     accept,
   });
-  if (error) console.warn('[pixelpets] respond request error:', error.message);
+  if (error) return { ok: false, error: cleanError(error.message) };
+  return { ok: true };
 };
 
-export const removeFriend = async (username: string): Promise<void> => {
-  if (!supabase) return;
+export const removeFriend = async (username: string): Promise<Result> => {
+  if (!supabase) return { ok: false, error: 'Not connected' };
   const { error } = await supabase.rpc('remove_friend', { target: username });
-  if (error) console.warn('[pixelpets] remove friend error:', error.message);
+  if (error) return { ok: false, error: cleanError(error.message) };
+  return { ok: true };
 };
 
 export const listFriends = async (): Promise<Friend[]> => {
