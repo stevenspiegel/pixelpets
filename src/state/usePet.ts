@@ -717,9 +717,15 @@ export const usePet = (userId: string | null) => {
     if (isSupabaseConfigured) {
       if (syncTimer.current) clearTimeout(syncTimer.current);
       syncTimer.current = setTimeout(() => {
-        syncCloudCollection(col).catch(() => {});
+        // Persist the LATEST committed collection (colRef), not the value
+        // captured when this effect ran — which can be one render stale.
+        syncCloudCollection(colRef.current).catch(() => {});
       }, 2000);
-      return;
+      // Cancel a pending write on unmount / account switch so it can't fire
+      // with the previous user's collection.
+      return () => {
+        if (syncTimer.current) clearTimeout(syncTimer.current);
+      };
     }
     AsyncStorage.setItem(v2Key(userId), JSON.stringify(col)).catch(() => {});
   }, [col, userId, loaded]);
@@ -787,6 +793,10 @@ export const usePet = (userId: string | null) => {
   // and to revert a rejected optimistic change. No-op in local-only mode.
   const reloadCollection = useCallback(async () => {
     if (!isSupabaseConfigured || !userRef.current) return;
+    // Flush any pending care edits before replacing local state with the cloud
+    // copy, so a reload (marketplace transfer / failed-op revert) doesn't drop
+    // several seconds of un-synced changes across the whole collection.
+    await syncCloudCollection(colRef.current).catch(() => {});
     let fresh: Collection;
     try {
       fresh = await loadCloudCollection();
