@@ -541,23 +541,10 @@ const findLocalPets = async (): Promise<PetState[]> => {
 // DB rows are snake_case; PetState is camelCase. Numeric columns are coerced
 // since PostgREST can return bigints as strings.
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// Only the client-writable (care) columns. Stats/level/rarity/species/ascended
-// are server-owned (set by RPCs) and locked from direct client writes.
-const petCareRow = (p: PetState) => ({
-  id: p.id,
-  name: p.name,
-  stage: p.stage,
-  hunger: p.hunger,
-  happiness: p.happiness,
-  cleanliness: p.cleanliness,
-  energy: p.energy,
-  health: p.health,
-  age: p.age,
-  last_tick: p.lastTick,
-  asleep: p.asleep,
-  poops: p.poops,
-  sick: p.sick,
-});
+// Care state (hunger/energy/health/…) is server-owned: it changes only through
+// the care_action RPC (called by the care buttons and the periodic tick), never
+// via direct client column writes. The client persists only the active-pet
+// selection (below) and pet names (renamePet).
 
 const petFromRow = (r: any): PetState => ({
   id: r.id,
@@ -619,24 +606,9 @@ const syncCloudCollection = async (col: Collection): Promise<void> => {
   const uid = sess.session?.user?.id;
   if (!uid) return;
 
-  // Update care state of existing pets ONLY. The client never inserts or deletes
-  // pets here — they are created and removed solely by server RPCs (hatch /
-  // adopt / import). A client-side delete used to wipe the WHOLE collection
-  // whenever this ran with an empty `col` (e.g. after a transient load error
-  // returned zero pets), so it has been removed entirely. An upsert is also
-  // avoided: its INSERT path fails the owner RLS check and would freeze the row.
-  const updates = await Promise.all(
-    col.pets.map((p) => {
-      const { id, ...care } = petCareRow(p);
-      return supabase!.from('pets').update(care).eq('id', id).eq('owner', uid);
-    })
-  );
-  for (const u of updates) {
-    if (u.error) console.warn('[pixelpets] update pet error:', u.error.message);
-  }
-
-  // Tokens / earn columns are server-owned now (changed only by the wallet
-  // RPCs), so the periodic sync only writes the active pet selection.
+  // Care + wallet are server-owned now (care_action / wallet RPCs), so the
+  // client never writes those columns. This sync persists only the active-pet
+  // selection. (Pets are created/removed solely by server RPCs.)
   const prof = await supabase
     .from('profiles')
     .update({ active_pet_id: col.activeId })
@@ -735,6 +707,25 @@ export const usePet = (userId: string | null) => {
       const current = colRef.current;
       if (current.pets.length === 0) return;
       setCol((c) => tickAll(c, Date.now()));
+      // Persist the active pet's passive decay server-side (care is server-owned;
+      // the client no longer writes care columns). Other pets decay lazily — the
+      // server recomputes from last_tick whenever they're acted on or loaded.
+      const activeId = current.activeId;
+      if (isSupabaseConfigured && activeId) {
+        (async () => {
+          const { data, error } = await supabase!.rpc('care_action', {
+            p_pet_id: activeId,
+            p_action: 'tick',
+          });
+          if (error || data == null) return;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const serverPet = applyDecay(petFromRow((data as any).pet), Date.now());
+          setCol((c) => ({
+            ...c,
+            pets: c.pets.map((p) => (p.id === serverPet.id ? serverPet : p)),
+          }));
+        })();
+      }
     }, TICK_MS);
     return () => clearInterval(id);
   }, []);
@@ -987,6 +978,17 @@ export const usePet = (userId: string | null) => {
       ...c,
       pets: c.pets.map((p) => (p.id === id ? { ...p, name: clean } : p)),
     }));
+    // `name` is the one care/identity column still client-writable; persist it
+    // directly since the periodic sync no longer writes pet columns.
+    if (isSupabaseConfigured) {
+      (async () => {
+        const { error } = await supabase!
+          .from('pets')
+          .update({ name: clean })
+          .eq('id', id);
+        if (error) console.warn('[pixelpets] rename error:', error.message);
+      })();
+    }
   }, []);
 
   // Merge the found local pets into the current collection (keeping any pets
