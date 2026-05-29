@@ -33,7 +33,7 @@
     "class_type": "CLIPTextEncode",
     "inputs": {
       "clip": ["10", 1],
-      "text": "blurry, photo, 3d, realistic, gradient, antialiased, noisy, watermark, text, jpeg artifacts, soft edges, drop shadow"
+      "text": "blurry, photo, 3d, realistic, gradient, antialiased, noisy, watermark, text, jpeg artifacts, soft edges, drop shadow, cast shadow, ground shadow, floor shadow, reflection, grey shading, desaturated"
     }
   },
   "10": {
