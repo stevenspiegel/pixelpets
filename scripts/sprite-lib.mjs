@@ -240,6 +240,34 @@ export function resample(src, sw, sh, dw, dh) {
   return out;
 }
 
+// Repair holes: any transparent pixel NOT reachable from the image border is
+// enclosed by the subject (e.g. the flood-fill tunnelled into a same-coloured
+// region), so restore it to opaque. removeBackgroundFlood only zeroes alpha and
+// leaves the original RGB intact, so flipping alpha back recovers the pixel.
+// Returns how many pixels were filled.
+export function fillHoles(rgba, w, h, alphaThreshold = 1) {
+  const n = w * h;
+  const isBg = (p) => rgba[p * 4 + 3] < alphaThreshold;
+  const reach = new Uint8Array(n);
+  const stack = [];
+  const seed = (x, y) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return;
+    const p = y * w + x;
+    if (reach[p] || !isBg(p)) return;
+    reach[p] = 1; stack.push(p);
+  };
+  for (let x = 0; x < w; x++) { seed(x, 0); seed(x, h - 1); }
+  for (let y = 0; y < h; y++) { seed(0, y); seed(w - 1, y); }
+  while (stack.length) {
+    const p = stack.pop();
+    const x = p % w, y = (p / w) | 0;
+    seed(x + 1, y); seed(x - 1, y); seed(x, y + 1); seed(x, y - 1);
+  }
+  let filled = 0;
+  for (let p = 0; p < n; p++) if (isBg(p) && !reach[p]) { rgba[p * 4 + 3] = 255; filled++; }
+  return filled;
+}
+
 // Remove stray opaque islands (background remnants like kept shadows) by
 // labelling connected opaque components and clearing any smaller than
 // `minFracOfLargest` of the biggest one. Keeps the subject (and any substantial

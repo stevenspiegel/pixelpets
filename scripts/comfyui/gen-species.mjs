@@ -33,8 +33,9 @@ const STAGE_MOD = {
   teen: 'adolescent, taller and lankier, lean, growing into adult features',
   adult: 'fully grown adult, strong confident stance, full detailed markings, majestic',
 };
-const SUFFIX = 'side profile, full body, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs';
-const NEGATIVE = 'blurry, photo, 3d, realistic, gradient, antialiased, noisy, watermark, text, jpeg artifacts, soft edges, drop shadow';
+// Framing suffix — mirrors scripts/comfyui/prompts.md. The negative prompt is
+// left as baked into the workflow (node 7) and NOT overridden here.
+const SUFFIX = 'full body from head to toe, entire animal visible, small in frame, wide shot, standing, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs';
 
 // --- args -------------------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -59,7 +60,7 @@ function buildWorkflow(stage) {
   const wf = JSON.parse(JSON.stringify(base));
   wf['3'].inputs.seed = seed;
   wf['6'].inputs.text = `pixel art, ${STAGE_MOD[stage]}, ${subject}, ${SUFFIX}`;
-  wf['7'].inputs.text = NEGATIVE;
+  // node 7 (negative) is left as baked into the workflow JSON.
   wf['9'].inputs.filename_prefix = `pixelpet-${slug}-${stage}-s${seed}`;
   return wf;
 }

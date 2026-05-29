@@ -34,7 +34,7 @@ import path from 'path';
 import url from 'url';
 import {
   decodePng, encodePng, fitToCanvas, keyOutBackground, removeBackgroundFlood,
-  removeSpecks, trimToContent, quantizeToPalette, cleanupSprite, loadPalette, loadRegistry, STAGES,
+  fillHoles, removeSpecks, trimToContent, quantizeToPalette, cleanupSprite, loadPalette, loadRegistry, STAGES,
 } from './sprite-lib.mjs';
 import { wireSprites } from './wire-sprites.mjs';
 
@@ -113,8 +113,13 @@ let { width, height, rgba } = decoded;
 
 if (args.autobg) removeBackgroundFlood(rgba, width, height, args['bg-tolerance'] ? bgTolerance : 60);
 else if (args.bg) keyOutBackground(rgba, args.bg, bgTolerance);
-// After background removal, drop stray islands (kept shadows etc.).
-if (args.autobg || args.bg) removeSpecks(rgba, width, height);
+// After background removal: repair enclosed holes (flood tunnelling into
+// same-coloured subject regions), then drop stray islands (kept shadows etc.).
+if (args.autobg || args.bg) {
+  const filled = fillHoles(rgba, width, height);
+  if (filled > 0) console.log(`Filled ${filled} enclosed hole pixel(s).`);
+  removeSpecks(rgba, width, height);
+}
 // Crop to the subject so it fills the frame (not lost in the render's margins).
 if (args.trim) { const t = trimToContent(rgba, width, height); rgba = t.rgba; width = t.width; height = t.height; }
 const framed = fitToCanvas(rgba, width, height, size, fit);
