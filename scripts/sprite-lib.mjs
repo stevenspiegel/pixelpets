@@ -336,40 +336,172 @@ export function keyOutBackground(rgba, hex, tolerance) {
 
 // Remove the connected background by flood-filling inward from the image edges,
 // where the backdrop always sits. Reference colour = the average of the border
-// pixels; any edge-connected pixel within `tolerance` of it becomes transparent.
-// Because it only follows *connected* matches, same-coloured regions inside the
-// subject are preserved (no holes) — unlike a global colour key. Best for AI
-// renders on a flat/simple background.
-export function removeBackgroundFlood(rgba, w, h, tolerance) {
-  let rs = 0, gs = 0, bs = 0, n = 0;
+// pixels. A neighbour is crossed only if it passes BOTH gates:
+//   - global: within `tolerance` of the sampled background colour, and
+//   - local:  within `localStep` of the adjacent background pixel we spread
+//     from (i.e. no colour edge between them).
+// The local gate makes the flood stop at the subject's outline even when the
+// subject's overall colour is close to the backdrop (e.g. a purple bat or grey
+// elephant on grey): a flat backdrop has tiny pixel-to-pixel variation, while a
+// subject edge is a real step. This prevents the flood from leaking through
+// faint channels — which otherwise either eats the body (high tolerance) or
+// punches interior holes (low tolerance). High-contrast subjects (e.g. an
+// orange fox) fail the global gate anyway, so their cutout is unchanged.
+// `localStep` defaults to ~half the tolerance (min 16).
+export function removeBackgroundFlood(rgba, w, h, tolerance, localStep) {
+  let rs = 0, gs = 0, bs = 0, ss = 0, n = 0;
   const sample = (x, y) => {
     const o = (y * w + x) * 4;
-    if (rgba[o + 3] > 0) { rs += rgba[o]; gs += rgba[o + 1]; bs += rgba[o + 2]; n++; }
+    if (rgba[o + 3] > 0) {
+      rs += rgba[o]; gs += rgba[o + 1]; bs += rgba[o + 2];
+      ss += rgba[o] * rgba[o] + rgba[o + 1] * rgba[o + 1] + rgba[o + 2] * rgba[o + 2];
+      n++;
+    }
   };
   for (let x = 0; x < w; x++) { sample(x, 0); sample(x, h - 1); }
   for (let y = 0; y < h; y++) { sample(0, y); sample(w - 1, y); }
   if (n === 0) return;
   const rr = rs / n, rg = gs / n, rb = bs / n;
-  const t2 = tolerance * tolerance * 3;
+
+  // Adaptive global tolerance. The passed `tolerance` is treated as an upper
+  // cap; the effective one is derived from how much the border pixels actually
+  // vary. A flat backdrop (tiny std) auto-tightens to a small tolerance so a
+  // low-contrast subject whose colour merely *approaches* the backdrop (purple
+  // bat, grey elephant) is NOT swallowed — the prior fixed-60 default ate such
+  // bodies once 2px anti-aliasing bridged the outline. A noisy/gradient backdrop
+  // widens it (still capped). std² = E[c²] - E[c]² summed over channels.
+  const variance = Math.max(0, ss / n - (rr * rr + rg * rg + rb * rb));
+  const std = Math.sqrt(variance);
+  const effTol = Math.min(tolerance, Math.max(12, Math.round(std * 5 + 8)));
+
+  const globalT2 = effTol * effTol * 3;
+  const step = localStep == null ? Math.max(12, Math.round(effTol / 2)) : localStep;
+  const stepT2 = step * step * 3;
+
   const visited = new Uint8Array(w * h);
+  const isBg = new Uint8Array(w * h);
   const stack = [];
-  const seed = (x, y) => {
+  const dist2 = (o, r, g, b) => {
+    const dr = rgba[o] - r, dg = rgba[o + 1] - g, db = rgba[o + 2] - b;
+    return dr * dr + dg * dg + db * db;
+  };
+
+  // Seed from the four borders: an edge pixel is background if it is already
+  // transparent or within the global tolerance of the sampled backdrop.
+  const edgeSeed = (x, y) => {
     if (x < 0 || y < 0 || x >= w || y >= h) return;
     const p = y * w + x;
     if (visited[p]) return;
-    visited[p] = 1;
     const o = p * 4;
-    if (rgba[o + 3] === 0) { stack.push(p); return; } // already transparent: keep spreading
-    const dr = rgba[o] - rr, dg = rgba[o + 1] - rg, db = rgba[o + 2] - rb;
-    if (dr * dr + dg * dg + db * db <= t2) stack.push(p);
+    if (rgba[o + 3] === 0 || dist2(o, rr, rg, rb) <= globalT2) {
+      visited[p] = 1; isBg[p] = 1; stack.push(p);
+    }
   };
-  for (let x = 0; x < w; x++) { seed(x, 0); seed(x, h - 1); }
-  for (let y = 0; y < h; y++) { seed(0, y); seed(w - 1, y); }
+  for (let x = 0; x < w; x++) { edgeSeed(x, 0); edgeSeed(x, h - 1); }
+  for (let y = 0; y < h; y++) { edgeSeed(0, y); edgeSeed(w - 1, y); }
+
+  // Cross from background pixel p into neighbour q only if q is globally
+  // background-like AND locally close to p (skip the local gate when p is
+  // transparent and thus has no meaningful colour).
+  const spread = (px, py, qx, qy) => {
+    if (qx < 0 || qy < 0 || qx >= w || qy >= h) return;
+    const q = qy * w + qx;
+    if (visited[q]) return;
+    visited[q] = 1;
+    const qo = q * 4;
+    if (rgba[qo + 3] === 0) { isBg[q] = 1; stack.push(q); return; }
+    if (dist2(qo, rr, rg, rb) > globalT2) return;
+    const po = (py * w + px) * 4;
+    if (rgba[po + 3] !== 0 && dist2(qo, rgba[po], rgba[po + 1], rgba[po + 2]) > stepT2) return;
+    isBg[q] = 1; stack.push(q);
+  };
   while (stack.length) {
     const p = stack.pop();
-    rgba[p * 4 + 3] = 0;
     const x = p % w, y = (p / w) | 0;
-    seed(x + 1, y); seed(x - 1, y); seed(x, y + 1); seed(x, y - 1);
+    spread(x, y, x + 1, y); spread(x, y, x - 1, y);
+    spread(x, y, x, y + 1); spread(x, y, x, y - 1);
+  }
+
+  for (let p = 0; p < w * h; p++) if (isBg[p]) rgba[p * 4 + 3] = 0;
+}
+
+// Post-cutout cleanup of the framed sprite: (1) drop isolated opaque islands
+// smaller than `minIsland` px (stray fringe specks left by an imperfect cutout)
+// and (2) fill enclosed transparent holes of `maxHole` px or fewer (pinholes
+// from low-contrast interior shading) by copying an adjacent opaque colour.
+// Both operate on 4-connected components. General — helps every species, not
+// just hard cutouts. Pass {minIsland: 0} / {maxHole: 0} to disable either.
+export function cleanupSprite(rgba, w, h, { minIsland = 6, maxHole = 4 } = {}) {
+  const N = w * h;
+  const opaque = (p) => rgba[p * 4 + 3] >= 128;
+
+  // Label 4-connected components over a predicate; return {comp, sizes}.
+  const components = (pred) => {
+    const comp = new Int32Array(N).fill(-1);
+    const sizes = [];
+    const stack = [];
+    for (let s = 0; s < N; s++) {
+      if (comp[s] !== -1 || !pred(s)) continue;
+      const id = sizes.length;
+      let size = 0;
+      comp[s] = id; stack.push(s);
+      while (stack.length) {
+        const p = stack.pop(); size++;
+        const x = p % w, y = (p / w) | 0;
+        const nb = [];
+        if (x > 0) nb.push(p - 1);
+        if (x < w - 1) nb.push(p + 1);
+        if (y > 0) nb.push(p - w);
+        if (y < h - 1) nb.push(p + w);
+        for (const q of nb) if (comp[q] === -1 && pred(q)) { comp[q] = id; stack.push(q); }
+      }
+      sizes.push(size);
+    }
+    return { comp, sizes };
+  };
+
+  // (1) Remove tiny opaque islands.
+  if (minIsland > 0) {
+    const { comp, sizes } = components(opaque);
+    for (let p = 0; p < N; p++) {
+      if (comp[p] !== -1 && sizes[comp[p]] < minIsland) rgba[p * 4 + 3] = 0;
+    }
+  }
+
+  // (2) Fill small enclosed transparent holes (components not touching the
+  // border). Border-connected transparent regions are the real background.
+  if (maxHole > 0) {
+    const transparent = (p) => rgba[p * 4 + 3] < 128;
+    const { comp, sizes } = components(transparent);
+    const touchesBorder = new Uint8Array(sizes.length);
+    for (let x = 0; x < w; x++) {
+      if (comp[x] !== -1) touchesBorder[comp[x]] = 1;
+      const b = (h - 1) * w + x;
+      if (comp[b] !== -1) touchesBorder[comp[b]] = 1;
+    }
+    for (let y = 0; y < h; y++) {
+      if (comp[y * w] !== -1) touchesBorder[comp[y * w]] = 1;
+      const r = y * w + (w - 1);
+      if (comp[r] !== -1) touchesBorder[comp[r]] = 1;
+    }
+    for (let p = 0; p < N; p++) {
+      const id = comp[p];
+      if (id === -1 || touchesBorder[id] || sizes[id] > maxHole) continue;
+      // Fill from an adjacent opaque pixel's colour.
+      const x = p % w, y = (p / w) | 0;
+      const nb = [];
+      if (x > 0) nb.push(p - 1);
+      if (x < w - 1) nb.push(p + 1);
+      if (y > 0) nb.push(p - w);
+      if (y < h - 1) nb.push(p + w);
+      for (const q of nb) {
+        if (opaque(q)) {
+          rgba[p * 4] = rgba[q * 4]; rgba[p * 4 + 1] = rgba[q * 4 + 1];
+          rgba[p * 4 + 2] = rgba[q * 4 + 2]; rgba[p * 4 + 3] = 255;
+          break;
+        }
+      }
+    }
   }
 }
 

@@ -13,6 +13,12 @@ Build each **positive** prompt as:
 pixel art, <STAGE>, <SUBJECT>, side profile, full body, centered, simple flat solid background, crisp clean pixels, limited palette, cute game creature sprite, 8-bit, by nerijs
 ```
 
+- **Background / cutout:** render on the model's default flat backdrop (it
+  ignores chroma-key requests at CFG 1.5 and just tints the creature). The
+  cutout is handled by an improved edge flood-fill in `sprite-lib.mjs` that
+  samples the actual corner background colour, so even low-contrast subjects
+  (purple bat, grey elephant) cut cleanly with the default tolerance. No
+  per-species tuning needed in the normal case.
 - The **negative** prompt is already baked into the workflow (node 7) — only
   override the positive `text` when enqueuing.
 - Use the **same seed for all four stages of a species** so it reads as the same

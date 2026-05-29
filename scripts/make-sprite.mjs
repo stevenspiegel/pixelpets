@@ -34,7 +34,7 @@ import path from 'path';
 import url from 'url';
 import {
   decodePng, encodePng, fitToCanvas, keyOutBackground, removeBackgroundFlood,
-  removeSpecks, trimToContent, quantizeToPalette, loadPalette, loadRegistry, STAGES,
+  removeSpecks, trimToContent, quantizeToPalette, cleanupSprite, loadPalette, loadRegistry, STAGES,
 } from './sprite-lib.mjs';
 import { wireSprites } from './wire-sprites.mjs';
 
@@ -119,6 +119,9 @@ if (args.autobg || args.bg) removeSpecks(rgba, width, height);
 if (args.trim) { const t = trimToContent(rgba, width, height); rgba = t.rgba; width = t.width; height = t.height; }
 const framed = fitToCanvas(rgba, width, height, size, fit);
 quantizeToPalette(framed, palette, alphaThreshold);
+// Final polish at sprite resolution: drop residual fringe specks and fill
+// pinhole holes left by the cutout (skip with --no-clean).
+if ((args.autobg || args.bg) && !args['no-clean']) cleanupSprite(framed, size, size);
 
 const outPath = path.join(root, 'assets/sprites', `${slug}-${stage}.png`);
 fs.writeFileSync(outPath, encodePng(size, size, framed));
