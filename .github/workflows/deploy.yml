@@ -18,7 +18,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Gate the deploy on a passing typecheck so a build-breaker (e.g. an
+  # unresolved import) can't ship to production.
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
   build:
+    needs: typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
