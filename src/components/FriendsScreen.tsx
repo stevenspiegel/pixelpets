@@ -27,9 +27,13 @@ import { RarityBadge } from './RarityBadge';
 
 type Props = {
   onExit: () => void;
+  // Start a casual battle against a friend's pet. canBattle is false when the
+  // player has no active (non-egg/dead) pet to fight with.
+  canBattle?: boolean;
+  onBattle?: (opponentPetId: string) => void;
 };
 
-export const FriendsScreen: React.FC<Props> = ({ onExit }) => {
+export const FriendsScreen: React.FC<Props> = ({ onExit, canBattle, onBattle }) => {
   const [friends, setFriends] = useState<Friend[] | null>(null);
   const [requests, setRequests] = useState<string[]>([]);
   const [draft, setDraft] = useState('');
@@ -111,6 +115,8 @@ export const FriendsScreen: React.FC<Props> = ({ onExit }) => {
     return (
       <FriendProfile
         friend={selected}
+        canBattle={canBattle}
+        onBattle={onBattle}
         onBack={() => setSelected(null)}
         onRemove={() =>
           confirmUnfriend(selected.username, () => {
@@ -198,9 +204,11 @@ export const FriendsScreen: React.FC<Props> = ({ onExit }) => {
 
 const FriendProfile: React.FC<{
   friend: Friend;
+  canBattle?: boolean;
+  onBattle?: (opponentPetId: string) => void;
   onBack: () => void;
   onRemove: () => void;
-}> = ({ friend, onBack, onRemove }) => {
+}> = ({ friend, canBattle, onBattle, onBack, onRemove }) => {
   const [pets, setPets] = useState<FriendPet[] | null>(null);
 
   useEffect(() => {
@@ -254,6 +262,20 @@ const FriendProfile: React.FC<{
                   LV {stats.level} · {speciesName(fp.species)}
                 </Text>
                 <RarityBadge rarity={fp.ascended ? 'mythical' : fp.rarity} />
+                {showSprite && onBattle && (
+                  <Pressable
+                    onPress={() => canBattle && onBattle(fp.id)}
+                    disabled={!canBattle}
+                    style={({ pressed }) => [
+                      styles.battleBtn,
+                      !canBattle && styles.battleBtnDisabled,
+                      canBattle && pressed && styles.battleBtnPressed,
+                    ]}
+                    hitSlop={6}
+                  >
+                    <Text style={styles.battleBtnText}>⚔️ BATTLE</Text>
+                  </Pressable>
+                )}
               </View>
             );
           })}
@@ -452,6 +474,27 @@ const styles = StyleSheet.create({
     borderColor: '#7a4ed0',
     borderRadius: 4,
     paddingVertical: 8,
+  },
+  battleBtn: {
+    marginTop: 6,
+    backgroundColor: '#ff5470',
+    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  battleBtnPressed: {
+    backgroundColor: '#e23a5a',
+  },
+  battleBtnDisabled: {
+    backgroundColor: '#4a3a5a',
+    opacity: 0.7,
+  },
+  battleBtnText: {
+    color: '#fff',
+    fontFamily: 'Courier',
+    fontSize: 11,
+    fontWeight: 'bold',
+    letterSpacing: 1,
   },
   eggEmoji: {
     fontSize: 48,

@@ -97,13 +97,15 @@ export type TurnResult = {
 
 // Begin a battle: the server builds the opponent and stores the fight.
 export const startBattle = async (
-  mode: 'pve' | 'pvp',
-  petId: string
+  mode: 'pve' | 'pvp' | 'friend',
+  petId: string,
+  opponentPetId?: string
 ): Promise<BattleStart | null> => {
   if (!supabase) return null;
   const { data, error } = await supabase.rpc('start_battle', {
     p_mode: mode,
     p_pet_id: petId,
+    p_opponent_pet_id: opponentPetId ?? null,
   });
   if (error) {
     // Surface the reason (e.g. an egg can't battle) instead of masking it as

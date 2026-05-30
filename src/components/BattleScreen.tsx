@@ -21,7 +21,9 @@ import { CreatureSprite } from './CreatureSprite';
 
 type Props = {
   pet: PetState;
-  mode?: 'pve' | 'pvp';
+  mode?: 'pve' | 'pvp' | 'friend';
+  // Friend mode (cloud only): the specific friend's pet to battle.
+  opponentPetId?: string;
   // Local mode (no cloud): the client engine credits the reward / records PvP.
   onReward: (amount: number, enemyLevel: number) => void;
   onResult?: (won: boolean) => void;
@@ -269,12 +271,13 @@ const hpView = (c: BattleCombatant, hp: number) => ({
 const ServerBattle: React.FC<Props> = ({
   pet,
   mode = 'pve',
+  opponentPetId,
   onWalletChange,
   onCanBattle,
   onSpendBattleEnergy,
   onExit,
 }) => {
-  const isPvp = mode === 'pvp';
+  const isPvp = mode === 'pvp' || mode === 'friend';
   const [phase, setPhase] = useState<'loading' | 'playing' | 'done' | 'empty'>(
     'loading'
   );
@@ -317,7 +320,7 @@ const ServerBattle: React.FC<Props> = ({
       setPhase('empty');
       return;
     }
-    const res = await startServerBattle(mode, pet.id);
+    const res = await startServerBattle(mode, pet.id, opponentPetId);
     if (!res) {
       setNotice('Couldn’t reach the arena — check your connection and try again.');
       setPhase('empty');
@@ -347,7 +350,7 @@ const ServerBattle: React.FC<Props> = ({
     );
     onSpendBattleEnergy?.();
     setPhase('playing');
-  }, [mode, pet.id, pet.name, pet.stage, isPvp, onCanBattle, onSpendBattleEnergy]);
+  }, [mode, pet.id, opponentPetId, pet.name, pet.stage, isPvp, onCanBattle, onSpendBattleEnergy]);
 
   useEffect(() => {
     begin();
