@@ -323,6 +323,67 @@ language sql security definer set search_path = public as $$
 $$;
 grant execute on function public.get_friend_pets(text) to authenticated;
 
+-- ── Backgrounds: cosmetic scenes behind your pet (earned-token sink) ───────────
+-- Players unlock background scenes with Pixel Tokens (no real money). Ownership +
+-- the equipped choice live on the profile; the wallet deduction goes through a
+-- SECURITY DEFINER RPC so price/balance can't be forged (same pattern as the
+-- other token spends). The display catalog (ids/names/assets) lives in the
+-- client (src/state/backgrounds.ts); the price is mirrored here for validation.
+alter table public.profiles
+  add column if not exists backgrounds      text[] not null default '{default}',
+  add column if not exists active_background text   not null default 'default';
+
+-- Valid background ids + their token price. 'default' is the free flat panel and
+-- is always owned. Keep in sync with BACKGROUNDS in src/state/backgrounds.ts.
+create or replace function public._background_price(p_id text)
+returns integer language sql immutable as $$
+  select case p_id
+    when 'beach'     then 400
+    when 'mountains' then 400
+    when 'tropical'  then 400
+    else null  -- unknown id (default is free / always owned, never unlocked)
+  end;
+$$;
+
+-- Unlock a background: validate the id, charge its price atomically, add to the
+-- owned set. Returns the new balance + owned list. Idempotent-ish: re-buying an
+-- owned one is rejected (no double charge).
+create or replace function public.unlock_background(p_id text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me    uuid := auth.uid();
+  price integer := public._background_price(p_id);
+  bal   integer;
+  owned text[];
+begin
+  if price is null then raise exception 'Unknown background'; end if;
+  select tokens, backgrounds into bal, owned from public.profiles where id = me for update;
+  if p_id = any(owned) then raise exception 'Already unlocked'; end if;
+  if bal < price then raise exception 'Not enough tokens'; end if;
+  update public.profiles
+    set tokens = tokens - price,
+        backgrounds = array_append(backgrounds, p_id)
+    where id = me
+    returning tokens, backgrounds into bal, owned;
+  return jsonb_build_object('tokens', bal, 'backgrounds', to_jsonb(owned));
+end; $$;
+grant execute on function public.unlock_background(text) to authenticated;
+
+-- Equip an owned background (or 'default'). Rejects ids you don't own.
+create or replace function public.set_active_background(p_id text)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid();
+begin
+  if p_id <> 'default'
+     and not (p_id = any(select backgrounds from public.profiles where id = me)) then
+    raise exception 'Background not owned';
+  end if;
+  update public.profiles set active_background = p_id where id = me;
+end; $$;
+grant execute on function public.set_active_background(text) to authenticated;
+
 -- ── Pixedex: species a player has ever owned ──────────────────────────────────
 -- A collection log. Unlike the pets table (current pets only), this persists
 -- through release/sale/death, so the Pixedex shows everything you've discovered.
