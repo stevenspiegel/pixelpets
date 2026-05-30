@@ -480,8 +480,13 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     letterSpacing: 3,
-    textShadowColor: '#7a4ed0',
-    textShadowOffset: { width: 2, height: 2 },
+    ...(Platform.select({
+      web: { textShadow: '2px 2px 0 #7a4ed0' },
+      default: {
+        textShadowColor: '#7a4ed0',
+        textShadowOffset: { width: 2, height: 2 },
+      },
+    }) as object),
   },
   pencil: {
     color: '#8a76c0',

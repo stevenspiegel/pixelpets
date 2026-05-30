@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, Text, StyleSheet, View } from 'react-native';
+import { Pressable, Text, StyleSheet, View, Platform } from 'react-native';
 
 type Props = {
   label: string;
@@ -38,10 +38,15 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     paddingVertical: 10,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 0,
+    ...(Platform.select({
+      web: { boxShadow: '2px 2px 0 rgba(0, 0, 0, 0.5)' },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 2, height: 2 },
+        shadowOpacity: 0.5,
+        shadowRadius: 0,
+      },
+    }) as object),
   },
   buttonPressed: {
     backgroundColor: '#5a30a0',
