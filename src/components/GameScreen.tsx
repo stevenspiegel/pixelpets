@@ -315,6 +315,38 @@ export const GameScreen: React.FC<Props> = ({
 
       {!isEgg && !isDead && battleOpen && (
         <>
+          {pets.filter((p) => p.stage !== 'egg' && p.stage !== 'dead').length > 1 && (
+            <View style={styles.battlePickWrap}>
+              <Text style={styles.battlePickLabel}>BATTLE WITH</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.battlePickRow}
+              >
+                {pets
+                  .filter((p) => p.stage !== 'egg' && p.stage !== 'dead')
+                  .map((p) => {
+                    const active = p.id === pet.id;
+                    return (
+                      <Pressable
+                        key={p.id}
+                        onPress={() => !active && onSwitchPet(p.id)}
+                        style={[styles.battlePickChip, active && styles.battlePickChipActive]}
+                      >
+                        <Text style={styles.battlePickEmoji}>{p.species}</Text>
+                        <Text
+                          style={[styles.battlePickName, active && styles.battlePickNameActive]}
+                          numberOfLines={1}
+                        >
+                          {p.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+              </ScrollView>
+            </View>
+          )}
+
           <Pressable
             onPress={tooTired ? undefined : onBattle}
             disabled={tooTired}
@@ -646,6 +678,47 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     marginTop: 2,
+  },
+  battlePickWrap: {
+    marginBottom: 8,
+  },
+  battlePickLabel: {
+    color: '#8a76c0',
+    fontFamily: 'Courier',
+    fontSize: 10,
+    letterSpacing: 2,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  battlePickRow: {
+    paddingHorizontal: 4,
+    gap: 8,
+  },
+  battlePickChip: {
+    alignItems: 'center',
+    width: 64,
+    paddingVertical: 6,
+    backgroundColor: '#2a1a4a',
+    borderWidth: 2,
+    borderColor: '#3a2a5a',
+    borderRadius: 6,
+  },
+  battlePickChipActive: {
+    borderColor: '#ff5470',
+    backgroundColor: '#3a1a3a',
+  },
+  battlePickEmoji: {
+    fontSize: 26,
+  },
+  battlePickName: {
+    color: '#8a76c0',
+    fontFamily: 'Courier',
+    fontSize: 10,
+    marginTop: 2,
+    maxWidth: 56,
+  },
+  battlePickNameActive: {
+    color: '#ffd0db',
   },
   battleCancelText: {
     color: '#8a76c0',
