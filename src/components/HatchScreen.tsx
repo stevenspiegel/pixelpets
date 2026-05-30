@@ -118,7 +118,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    // Reserve the grass band (~150px, drawn behind by App) so the content
+    // centers in the visible sky instead of the full viewport — otherwise it
+    // reads as a big empty void above the logo with grass filling the bottom.
+    paddingBottom: 140,
   },
   topBar: {
     position: 'absolute',
