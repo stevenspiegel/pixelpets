@@ -20,7 +20,7 @@ const v2Key = (userId: string) => `${STORAGE_PREFIX_V2}${userId}`;
 // the cloud, so we don't keep prompting.
 const importedKey = (userId: string) => `@pixelpets/imported/v1/${userId}`;
 
-export const MAX_PETS = 8;
+export const MAX_PETS = 10;
 
 // Only full-body emoji — face-only emoji (🐶 🐱 🦁 etc.) are intentionally
 // excluded so every newly hatched pet shows as a recognizable creature

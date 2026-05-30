@@ -342,8 +342,10 @@ create index if not exists adoption_seller_idx on public.adoption_listings (sell
 alter table public.adoption_listings enable row level security;
 
 -- Cap mirrored from the client (MAX_PETS). Keep in sync if you change it there.
+-- Single source of truth for the collection cap (keep in sync with MAX_PETS in
+-- src/state/usePet.ts). hatch_pet / import_pets / adopt_pet all gate on this.
 create or replace function public.market_max_pets() returns integer
-language sql immutable as $$ select 8 $$;
+language sql immutable as $$ select 10 $$;
 
 -- Put one of your own pets up for adoption (or update its price). Rejects your
 -- active pet, your last remaining pet, and eggs/dead pets.
@@ -473,7 +475,7 @@ declare
 begin
   if pid is null then raise exception 'Invalid pet'; end if;
   select count(*) into owned from public.pets where owner = me;
-  if owned >= 8 then raise exception 'Your collection is full'; end if;
+  if owned >= public.market_max_pets() then raise exception 'Your collection is full'; end if;
   select tokens into bal from public.profiles where id = me for update;
   if bal < cost then raise exception 'Not enough tokens'; end if;
   insert into public.pets (
@@ -619,7 +621,7 @@ declare
 begin
   select count(*) into owned from public.pets where owner = me;
   for item in select * from jsonb_array_elements(p_pets) loop
-    exit when owned >= 8;
+    exit when owned >= public.market_max_pets();
     pid := item->>'id';
     if pid is null then continue; end if;
     if exists (select 1 from public.pets where id = pid) then continue; end if;
@@ -688,7 +690,7 @@ declare
   pet_row public.pets%rowtype;
 begin
   select count(*) into owned from public.pets where owner = me;
-  if owned >= 8 then raise exception 'Your collection is full'; end if;
+  if owned >= public.market_max_pets() then raise exception 'Your collection is full'; end if;
   select tokens into bal from public.profiles where id = me for update;
   if bal < cost then raise exception 'Not enough tokens'; end if;
 
