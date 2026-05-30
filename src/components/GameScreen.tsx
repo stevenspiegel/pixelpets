@@ -98,6 +98,9 @@ export const GameScreen: React.FC<Props> = ({
   // PvE + PvP are tucked behind a single BATTLE button to keep the home screen
   // tidy; tapping it reveals the two battle options.
   const [battleOpen, setBattleOpen] = useState(false);
+  // Measure the panel's rendered width to force a true square (aspectRatio alone
+  // wasn't reliably square, leaving the background cropped/zoomed).
+  const [panelW, setPanelW] = useState(0);
 
   // Leave edit mode when switching to a different pet.
   useEffect(() => {
@@ -204,7 +207,13 @@ export const GameScreen: React.FC<Props> = ({
       </View>
 
       <View style={styles.tama}>
-        <View style={styles.screen}>
+        <View
+          style={[styles.screen, panelW > 0 && { height: panelW }]}
+          onLayout={(e) => {
+            const w = e.nativeEvent.layout.width;
+            if (w && Math.abs(w - panelW) > 1) setPanelW(w);
+          }}
+        >
           {bgImage && (
             <Image source={bgImage} style={styles.screenBg} resizeMode="cover" />
           )}
