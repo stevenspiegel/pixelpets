@@ -22,7 +22,6 @@ import { DailyScreen } from './src/components/DailyScreen';
 import { MarketplaceScreen } from './src/components/MarketplaceScreen';
 import { StoreScreen } from './src/components/StoreScreen';
 import { purchasesAvailable } from './src/state/purchases';
-import { recordPvpResult } from './src/battle/pvp';
 
 const SKY = '#1565ad';
 const GRASS = '#12b35a';
@@ -127,7 +126,6 @@ export default function App() {
         pet={activePet}
         mode={view}
         onReward={(amount) => grantTokens(amount)}
-        onResult={view === 'pvp' ? recordPvpResult : undefined}
         onWalletChange={setWalletTokens}
         onCanBattle={canBattleActive}
         onSpendBattleEnergy={spendBattleEnergy}
