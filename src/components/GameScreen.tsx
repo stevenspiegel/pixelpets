@@ -557,8 +557,13 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 12,
     alignItems: 'center',
+    justifyContent: 'center',
     position: 'relative',
     overflow: 'hidden',
+    // Square panel so the square (512×512) backgrounds show fully without the
+    // cover-crop that was cutting off the top/bottom.
+    aspectRatio: 1,
+    width: '100%',
   },
   screenBg: {
     ...StyleSheet.absoluteFillObject,
