@@ -374,10 +374,14 @@ grant execute on function public.unlock_background(text) to authenticated;
 create or replace function public.set_active_background(p_id text)
 returns void
 language plpgsql security definer set search_path = public as $$
-declare me uuid := auth.uid();
+declare
+  me    uuid := auth.uid();
+  owned text[];
 begin
-  if p_id <> 'default'
-     and not (p_id = any(select backgrounds from public.profiles where id = me)) then
+  -- Select the array into a variable first; `any(<subquery>)` would treat each
+  -- ROW (a text[]) as the comparand and fail with "text = text[]".
+  select backgrounds into owned from public.profiles where id = me;
+  if p_id <> 'default' and not (p_id = any(owned)) then
     raise exception 'Background not owned';
   end if;
   update public.profiles set active_background = p_id where id = me;
