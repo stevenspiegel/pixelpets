@@ -1,6 +1,6 @@
 # Verification — PR #90: server-authoritative pet care (Phase 2a)
 
-**Branch:** `claude/server-care-phase2a` · **Commit:** `f046240` · **File changed:** `src/state/usePet.ts` (+37 / −35)
+**Verifies:** [PR #90](https://github.com/stevenspiegel/pixelpets/pull/90) · **Branch:** `claude/server-care-phase2a` · **Commit:** `f046240` · **File changed:** `src/state/usePet.ts` (+37 / −35)
 
 **Verdict: PASS** — all four requested checks confirmed by driving the running web app against a live Supabase backend (Chrome DevTools automation), observing network + server state directly.
 
