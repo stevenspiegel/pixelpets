@@ -754,10 +754,10 @@ grant execute on function public.ascend_pet(text) to authenticated;
 -- stats/level/rarity/species/ascended change solely via the RPCs above and
 -- adopt_pet. (age/stage stay writable so time-based growth still persists.)
 revoke update on public.pets from anon, authenticated;
-grant update (
-  name, hunger, happiness, cleanliness, energy, health, age, stage,
-  last_tick, asleep, poops, sick
-) on public.pets to authenticated;
+-- Care columns are server-owned now (changed only via care_action / start_battle).
+-- Only the pet name stays client-writable (renamePet); every care/identity column
+-- is off-limits to direct client writes. (Phase 2b — closes audit #5.)
+grant update (name) on public.pets to authenticated;
 
 -- ── Server-authoritative pet care (Phase 1: additive) ─────────────────────────
 -- Moves care decay + actions server-side so clients can't set health/energy/etc.
@@ -939,9 +939,17 @@ declare
 begin
   select * into pet from public.pets where id = p_pet_id and owner = me;
   if pet.id is null then raise exception 'That pet is not yours'; end if;
+  -- Bring care current and charge battle energy SERVER-SIDE (BATTLE_ENERGY_COST
+  -- = 20). Energy is server-owned now, so it can't be reset to grind battles.
+  pet := public._decay_pet_row(pet);
   if pet.stage in ('egg', 'dead') then raise exception 'This pet cannot battle'; end if;
-
-  plvl := least(50, greatest(1, coalesce(pet.level, 1)));
+  if pet.energy < 20 then raise exception 'Too tired to battle — let your pet rest'; end if;
+  update public.pets set
+    energy = pet.energy - 20, hunger = pet.hunger, happiness = pet.happiness,
+    cleanliness = pet.cleanliness, health = pet.health, age = pet.age,
+    stage = pet.stage, asleep = pet.asleep, poops = pet.poops, sick = pet.sick,
+    last_tick = pet.last_tick
+  where id = pet.id;
   pgrow := 1 + (plvl - 1) * 0.05;
   pasc := case when coalesce(pet.ascended, false) then 1.5 else 1.0 end;
   patk := round((pet.stats->>'attack')::numeric  * pgrow * pasc);
