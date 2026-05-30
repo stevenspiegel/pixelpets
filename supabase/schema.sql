@@ -323,6 +323,46 @@ language sql security definer set search_path = public as $$
 $$;
 grant execute on function public.get_friend_pets(text) to authenticated;
 
+-- ── Pixedex: species a player has ever owned ──────────────────────────────────
+-- A collection log. Unlike the pets table (current pets only), this persists
+-- through release/sale/death, so the Pixedex shows everything you've discovered.
+-- Populated by a trigger on ANY pet insert, so it automatically covers hatch,
+-- adopt, import and shelter freebies without touching each RPC. The client owns
+-- the display catalog (species list, names, rarities in src/state/usePet.ts);
+-- the server just stores the set of discovered species emoji per profile.
+alter table public.profiles
+  add column if not exists discovered_species text[] not null default '{}';
+
+create or replace function public._record_discovery()
+returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  update public.profiles
+    set discovered_species = (
+      select array(
+        select distinct e from unnest(discovered_species || new.species) as e
+      )
+    )
+    where id = new.owner
+      and not (new.species = any(discovered_species));
+  return new;
+end; $$;
+
+drop trigger if exists on_pet_discovered on public.pets;
+create trigger on_pet_discovered
+  after insert on public.pets
+  for each row execute function public._record_discovery();
+
+-- Backfill: seed each profile's Pixedex from the pets they currently own (so
+-- existing players don't start empty). One-time, idempotent.
+update public.profiles p set discovered_species = sub.species
+from (
+  select owner, array_agg(distinct species) as species
+  from public.pets group by owner
+) sub
+where sub.owner = p.id
+  and not (p.discovered_species @> sub.species);
+
 -- ── Marketplace: public, token-priced pet adoption ────────────────────────────
 -- Players list a pet for a token price; anyone can adopt it. Ownership transfer
 -- and token movement happen atomically inside adopt_pet (SECURITY DEFINER) so

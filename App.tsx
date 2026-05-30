@@ -21,6 +21,7 @@ import { FriendsScreen } from './src/components/FriendsScreen';
 import { DailyScreen } from './src/components/DailyScreen';
 import { MarketplaceScreen } from './src/components/MarketplaceScreen';
 import { StoreScreen } from './src/components/StoreScreen';
+import { PixedexScreen } from './src/components/PixedexScreen';
 import { purchasesAvailable } from './src/state/purchases';
 
 const SKY = '#1565ad';
@@ -55,7 +56,8 @@ export default function App() {
   const [addingNew, setAddingNew] = useState(false);
   // null = game screen; 'pve'/'pvp' = battle; the rest are full-screen menus.
   const [view, setView] = useState<
-    null | 'pve' | 'pvp' | 'friend' | 'leaderboard' | 'friends' | 'marketplace' | 'daily' | 'store'
+    | null | 'pve' | 'pvp' | 'friend' | 'leaderboard' | 'friends' | 'marketplace'
+    | 'daily' | 'store' | 'pixedex'
   >(null);
   // When battling a specific friend's pet, the opponent pet id (else undefined).
   const [friendOpponent, setFriendOpponent] = useState<string | undefined>(undefined);
@@ -152,6 +154,8 @@ export default function App() {
     screen = <DailyScreen onWalletChange={setWalletTokens} onExit={() => setView(null)} />;
   } else if (view === 'store' && username) {
     screen = <StoreScreen tokens={tokens} onExit={() => setView(null)} />;
+  } else if (view === 'pixedex' && username) {
+    screen = <PixedexScreen onExit={() => setView(null)} />;
   } else if (view === 'marketplace' && username) {
     screen = (
       <MarketplaceScreen
@@ -181,6 +185,7 @@ export default function App() {
         onStore={purchasesAvailable() ? () => setView('store') : undefined}
         onDaily={isSupabaseConfigured ? () => setView('daily') : undefined}
         onLeaderboard={isSupabaseConfigured ? () => setView('leaderboard') : undefined}
+        onPixedex={isSupabaseConfigured ? () => setView('pixedex') : undefined}
         onFriends={isSupabaseConfigured ? () => setView('friends') : undefined}
         onMarketplace={isSupabaseConfigured ? () => setView('marketplace') : undefined}
         onLogOut={logOut}
