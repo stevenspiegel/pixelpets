@@ -154,9 +154,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     letterSpacing: 4,
     marginBottom: 6,
-    textShadowColor: '#7a4ed0',
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 0,
+    ...(Platform.select({
+      web: { textShadow: '2px 2px 0 #7a4ed0' },
+      default: {
+        textShadowColor: '#7a4ed0',
+        textShadowOffset: { width: 2, height: 2 },
+        textShadowRadius: 0,
+      },
+    }) as object),
   },
   subtitle: {
     color: '#d6c8ff',

@@ -190,7 +190,7 @@ export default function App() {
 
   return (
     <View style={styles.root}>
-      <View style={styles.grass} pointerEvents="none">
+      <View style={styles.grass}>
         <View style={styles.teeth}>
           {Array.from({ length: TEETH_COUNT }).map((_, i) => (
             <View
@@ -221,6 +221,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: 150,
+    pointerEvents: 'none',
   },
   teeth: {
     flexDirection: 'row',

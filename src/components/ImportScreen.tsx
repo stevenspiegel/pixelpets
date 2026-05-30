@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Platform } from 'react-native';
 import { PetState } from '../types';
 import { CreatureSprite } from './CreatureSprite';
 import { speciesName } from '../state/usePet';
@@ -64,8 +64,13 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: 'bold',
     letterSpacing: 3,
-    textShadowColor: '#7a4ed0',
-    textShadowOffset: { width: 2, height: 2 },
+    ...(Platform.select({
+      web: { textShadow: '2px 2px 0 #7a4ed0' },
+      default: {
+        textShadowColor: '#7a4ed0',
+        textShadowOffset: { width: 2, height: 2 },
+      },
+    }) as object),
   },
   subtitle: {
     color: '#d6c8ff',
