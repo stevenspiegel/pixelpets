@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
+  Image,
   Alert,
   Platform,
 } from 'react-native';
@@ -17,6 +18,7 @@ import { RarityBadge } from './RarityBadge';
 import { PetSwitcher } from './PetSwitcher';
 import { CreatureSprite } from './CreatureSprite';
 import { BattleStats } from './BattleStats';
+import { backgroundImage } from '../state/backgrounds';
 import { MAX_PETS, speciesName, canAscend, effectiveRarity, EGG_COST, BATTLE_ENERGY_COST } from '../state/usePet';
 
 type Props = {
@@ -38,6 +40,8 @@ type Props = {
   onPixedex?: () => void;
   onFriends?: () => void;
   onMarketplace?: () => void;
+  onBackgrounds?: () => void;
+  activeBackground?: string;
   onLogOut: () => void;
 };
 
@@ -84,6 +88,8 @@ export const GameScreen: React.FC<Props> = ({
   onPixedex,
   onFriends,
   onMarketplace,
+  onBackgrounds,
+  activeBackground,
   onLogOut,
 }) => {
   const [editingName, setEditingName] = useState(false);
@@ -126,6 +132,7 @@ export const GameScreen: React.FC<Props> = ({
   const tooTired = pet.energy < BATTLE_ENERGY_COST;
   const ascendable = canAscend(pet);
   const stageLabel = pet.ascended ? 'ASCENDED' : pet.stage.toUpperCase();
+  const bgImage = activeBackground ? backgroundImage(activeBackground) : undefined;
 
   const menuItems: { key: string; icon: string; label: string; onPress: () => void }[] = [];
   if (onDaily) menuItems.push({ key: 'daily', icon: '📅', label: 'Daily Quests', onPress: onDaily });
@@ -133,6 +140,7 @@ export const GameScreen: React.FC<Props> = ({
   if (onMarketplace) menuItems.push({ key: 'market', icon: '🏷️', label: 'Marketplace', onPress: onMarketplace });
   if (onLeaderboard) menuItems.push({ key: 'leaderboard', icon: '🏆', label: 'Leaderboard', onPress: onLeaderboard });
   if (onPixedex) menuItems.push({ key: 'pixedex', icon: '📖', label: 'Pixedex', onPress: onPixedex });
+  if (onBackgrounds) menuItems.push({ key: 'backgrounds', icon: '🖼️', label: 'Backgrounds', onPress: onBackgrounds });
   if (onFriends) menuItems.push({ key: 'friends', icon: '👥', label: 'Friends', onPress: onFriends });
 
   return (
@@ -197,6 +205,9 @@ export const GameScreen: React.FC<Props> = ({
 
       <View style={styles.tama}>
         <View style={styles.screen}>
+          {bgImage && (
+            <Image source={bgImage} style={styles.screenBg} resizeMode="cover" />
+          )}
           <Pet pet={pet} />
           <Text style={styles.status}>
             {pet.name} {status}
@@ -546,6 +557,11 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 12,
     alignItems: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  screenBg: {
+    ...StyleSheet.absoluteFillObject,
   },
   status: {
     fontFamily: 'Courier',

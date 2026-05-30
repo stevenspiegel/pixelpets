@@ -22,6 +22,8 @@ import { DailyScreen } from './src/components/DailyScreen';
 import { MarketplaceScreen } from './src/components/MarketplaceScreen';
 import { StoreScreen } from './src/components/StoreScreen';
 import { PixedexScreen } from './src/components/PixedexScreen';
+import { BackgroundsScreen } from './src/components/BackgroundsScreen';
+import { fetchBackgrounds } from './src/state/backgrounds';
 import { purchasesAvailable } from './src/state/purchases';
 
 const SKY = '#1565ad';
@@ -57,10 +59,27 @@ export default function App() {
   // null = game screen; 'pve'/'pvp' = battle; the rest are full-screen menus.
   const [view, setView] = useState<
     | null | 'pve' | 'pvp' | 'friend' | 'leaderboard' | 'friends' | 'marketplace'
-    | 'daily' | 'store' | 'pixedex'
+    | 'daily' | 'store' | 'pixedex' | 'backgrounds'
   >(null);
   // When battling a specific friend's pet, the opponent pet id (else undefined).
   const [friendOpponent, setFriendOpponent] = useState<string | undefined>(undefined);
+  // The equipped background id (rendered behind the pet on the home screen).
+  const [activeBackground, setActiveBackground] = useState('default');
+
+  // Load the equipped background when the user changes.
+  useEffect(() => {
+    if (!username) {
+      setActiveBackground('default');
+      return;
+    }
+    let on = true;
+    fetchBackgrounds().then(({ active }) => {
+      if (on) setActiveBackground(active);
+    });
+    return () => {
+      on = false;
+    };
+  }, [username]);
 
   // Whenever the user changes (login/logout), reset transient overlays.
   useEffect(() => {
@@ -156,6 +175,15 @@ export default function App() {
     screen = <StoreScreen tokens={tokens} onExit={() => setView(null)} />;
   } else if (view === 'pixedex' && username) {
     screen = <PixedexScreen onExit={() => setView(null)} />;
+  } else if (view === 'backgrounds' && username) {
+    screen = (
+      <BackgroundsScreen
+        tokens={tokens}
+        onWalletChange={setWalletTokens}
+        onActiveChange={setActiveBackground}
+        onExit={() => setView(null)}
+      />
+    );
   } else if (view === 'marketplace' && username) {
     screen = (
       <MarketplaceScreen
@@ -188,6 +216,8 @@ export default function App() {
         onPixedex={isSupabaseConfigured ? () => setView('pixedex') : undefined}
         onFriends={isSupabaseConfigured ? () => setView('friends') : undefined}
         onMarketplace={isSupabaseConfigured ? () => setView('marketplace') : undefined}
+        onBackgrounds={isSupabaseConfigured ? () => setView('backgrounds') : undefined}
+        activeBackground={activeBackground}
         onLogOut={logOut}
       />
     );
