@@ -936,7 +936,13 @@ create policy "battles: own read" on public.battles for select using (auth.uid()
 
 -- Begin a battle. Builds the opponent (PvE scaled to the player, or a random
 -- PvP pet), stores the fight at full HP, and returns the opening state.
-create or replace function public.start_battle(p_mode text, p_pet_id text)
+-- Drop the old 2-arg signature so the new default-param version below isn't an
+-- ambiguous overload when called with two args.
+drop function if exists public.start_battle(text, text);
+
+create or replace function public.start_battle(
+  p_mode text, p_pet_id text, p_opponent_pet_id text default null
+)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -976,11 +982,28 @@ begin
   pspd := round((pet.stats->>'speed')::numeric   * pgrow * pasc);
   phpv := greatest(1, round((pet.stats->>'maxHp')::numeric * pgrow * pasc));
 
-  if p_mode = 'pvp' then
-    select * into opp from public.pets
-      where owner <> me and stage <> 'egg' and stage <> 'dead'
-      order by random() limit 1;
-    if opp.id is null then return jsonb_build_object('empty', true); end if;
+  if p_mode = 'pvp' or p_mode = 'friend' then
+    if p_opponent_pet_id is not null then
+      -- Friend battle: a specific opponent pet. Verify it belongs to one of the
+      -- caller's friends (and is battle-ready) so you can't target arbitrary
+      -- players' pets.
+      select * into opp from public.pets pt
+        where pt.id = p_opponent_pet_id
+          and pt.owner <> me
+          and pt.stage <> 'egg' and pt.stage <> 'dead'
+          and exists (
+            select 1 from public.friends f
+            where f.owner = me and f.friend = pt.owner
+          );
+      if opp.id is null then
+        raise exception 'That pet is not available to battle';
+      end if;
+    else
+      select * into opp from public.pets
+        where owner <> me and stage <> 'egg' and stage <> 'dead'
+        order by random() limit 1;
+      if opp.id is null then return jsonb_build_object('empty', true); end if;
+    end if;
     select username into opp_user from public.profiles where id = opp.owner;
     elvl := least(50, greatest(1, coalesce(opp.level, 1)));
     egrow := 1 + (elvl - 1) * 0.05;
@@ -1031,7 +1054,7 @@ begin
       'attack', eatk, 'defense', edef, 'speed', espd, 'maxHp', ehpv, 'hp', ehpv)
   );
 end; $$;
-grant execute on function public.start_battle(text, text) to authenticated;
+grant execute on function public.start_battle(text, text, text) to authenticated;
 
 -- Resolve one turn. The player commits a tactic; the enemy's is rolled blindly.
 -- Damage scales with attacker.attack vs defender.defense (atk²/(atk+def)), then
@@ -1117,7 +1140,9 @@ begin
       where id = b.id;
   else
     -- Battle over: settle rewards / PvP record, then discard the row.
-    if result = 'won' then
+    -- Friend battles are casual: no token reward, no daily-quest credit, and no
+    -- PvP record (handled below) — so friends can't farm each other.
+    if result = 'won' and b.mode <> 'friend' then
       reward := 5 + (b.e_level / 5);                              -- battleReward()
       update public.profiles set tokens = tokens + reward where id = me;
       perform public._daily_bump('won');
