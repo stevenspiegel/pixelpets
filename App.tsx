@@ -55,8 +55,10 @@ export default function App() {
   const [addingNew, setAddingNew] = useState(false);
   // null = game screen; 'pve'/'pvp' = battle; the rest are full-screen menus.
   const [view, setView] = useState<
-    null | 'pve' | 'pvp' | 'leaderboard' | 'friends' | 'marketplace' | 'daily' | 'store'
+    null | 'pve' | 'pvp' | 'friend' | 'leaderboard' | 'friends' | 'marketplace' | 'daily' | 'store'
   >(null);
+  // When battling a specific friend's pet, the opponent pet id (else undefined).
+  const [friendOpponent, setFriendOpponent] = useState<string | undefined>(undefined);
 
   // Whenever the user changes (login/logout), reset transient overlays.
   useEffect(() => {
@@ -120,11 +122,12 @@ export default function App() {
         onMarketplace={isSupabaseConfigured ? () => setView('marketplace') : undefined}
       />
     );
-  } else if (activePet && (view === 'pve' || view === 'pvp')) {
+  } else if (activePet && (view === 'pve' || view === 'pvp' || view === 'friend')) {
     screen = (
       <BattleScreen
         pet={activePet}
         mode={view}
+        opponentPetId={view === 'friend' ? friendOpponent : undefined}
         onReward={(amount) => grantTokens(amount)}
         onWalletChange={setWalletTokens}
         onCanBattle={canBattleActive}
@@ -135,7 +138,16 @@ export default function App() {
   } else if (view === 'leaderboard' && username) {
     screen = <LeaderboardScreen username={username} onExit={() => setView(null)} />;
   } else if (view === 'friends' && username) {
-    screen = <FriendsScreen onExit={() => setView(null)} />;
+    screen = (
+      <FriendsScreen
+        canBattle={!!activePet}
+        onBattle={(opponentPetId) => {
+          setFriendOpponent(opponentPetId);
+          setView('friend');
+        }}
+        onExit={() => setView(null)}
+      />
+    );
   } else if (view === 'daily' && username) {
     screen = <DailyScreen onWalletChange={setWalletTokens} onExit={() => setView(null)} />;
   } else if (view === 'store' && username) {
