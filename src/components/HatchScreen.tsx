@@ -12,7 +12,7 @@ import {
 
 type Props = {
   username: string;
-  onHatch: (name: string) => void;
+  onHatch: (name: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   onLogOut: () => void;
   tokens: number;
   cost: number;
@@ -30,7 +30,18 @@ export const HatchScreen: React.FC<Props> = ({
   onMarketplace,
 }) => {
   const [name, setName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const affordable = tokens >= cost;
+
+  const submit = async () => {
+    if (busy || !affordable) return;
+    setBusy(true);
+    setError(null);
+    const res = await onHatch(name.trim() || 'Pixel');
+    setBusy(false);
+    if (!res.ok) setError(res.error);
+  };
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -69,16 +80,19 @@ export const HatchScreen: React.FC<Props> = ({
         autoCapitalize="words"
       />
       <Pressable
-        onPress={() => affordable && onHatch(name.trim() || 'Pixel')}
-        disabled={!affordable}
+        onPress={submit}
+        disabled={!affordable || busy}
         style={({ pressed }) => [
           styles.button,
-          !affordable && styles.buttonDisabled,
-          affordable && pressed && styles.buttonPressed,
+          (!affordable || busy) && styles.buttonDisabled,
+          affordable && !busy && pressed && styles.buttonPressed,
         ]}
       >
-        <Text style={styles.buttonText}>GET AN EGG · ✦ {cost}</Text>
+        <Text style={styles.buttonText}>
+          {busy ? 'HATCHING…' : `GET AN EGG · ✦ ${cost}`}
+        </Text>
       </Pressable>
+      {error && <Text style={styles.hint}>{error}</Text>}
       {!affordable && (
         <Text style={styles.hint}>
           Not enough tokens — win battles and play to earn more, or adopt a pet
