@@ -750,6 +750,21 @@ begin
 end; $$;
 grant execute on function public.ascend_pet(text) to authenticated;
 
+-- Release (delete) one of your own pets. The periodic sync no longer prunes
+-- removed pets (that blanket delete once wiped whole accounts — see the load
+-- guard), so release goes through this explicit RPC instead. Clears
+-- active_pet_id if it pointed at the released pet.
+create or replace function public.release_pet(p_pet_id text)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid();
+begin
+  delete from public.pets where id = p_pet_id and owner = me;
+  update public.profiles set active_pet_id = null
+    where id = me and active_pet_id = p_pet_id;
+end; $$;
+grant execute on function public.release_pet(text) to authenticated;
+
 -- Lock the stat/identity columns: clients may only write care state + name now.
 -- stats/level/rarity/species/ascended change solely via the RPCs above and
 -- adopt_pet. (age/stage stay writable so time-based growth still persists.)
