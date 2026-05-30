@@ -20,7 +20,7 @@ const v2Key = (userId: string) => `${STORAGE_PREFIX_V2}${userId}`;
 // the cloud, so we don't keep prompting.
 const importedKey = (userId: string) => `@pixelpets/imported/v1/${userId}`;
 
-export const MAX_PETS = 8;
+export const MAX_PETS = 10;
 
 // Only full-body emoji — face-only emoji (🐶 🐱 🦁 etc.) are intentionally
 // excluded so every newly hatched pet shows as a recognizable creature
@@ -786,13 +786,26 @@ export const usePet = (userId: string | null) => {
   }, []);
 
   const removePet = useCallback((id: string) => {
+    // Optimistically drop it locally...
     setCol((c) => {
       const remaining = c.pets.filter((p) => p.id !== id);
       const activeId =
         c.activeId === id ? remaining[0]?.id ?? null : c.activeId;
       return { ...c, pets: remaining, activeId };
     });
-  }, []);
+    // ...then delete it server-side. Without this the row survives and a reload
+    // brings the released pet back. release_pet also clears active_pet_id if it
+    // pointed at this pet. Revert from the cloud if the delete fails.
+    if (isSupabaseConfigured) {
+      (async () => {
+        const { error } = await supabase!.rpc('release_pet', { p_pet_id: id });
+        if (error) {
+          console.warn('[pixelpets] release error:', error.message);
+          await reloadCollection();
+        }
+      })();
+    }
+  }, [reloadCollection]);
 
   // Re-read the collection from the cloud, replacing local state. Used after a
   // marketplace transfer (so an adopted pet appears and a sold one disappears)
