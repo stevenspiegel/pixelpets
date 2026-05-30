@@ -206,7 +206,7 @@ export const GameScreen: React.FC<Props> = ({
       <View style={styles.tama}>
         <View style={styles.screen}>
           {bgImage && (
-            <Image source={bgImage} style={styles.screenBg} resizeMode="cover" />
+            <Image source={bgImage} style={styles.screenBg} resizeMode="contain" />
           )}
           <Pet pet={pet} />
           <Text style={styles.status}>
