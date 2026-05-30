@@ -57,8 +57,8 @@ export const HatchScreen: React.FC<Props> = ({
         source={require('../../assets/header.png')}
         style={styles.header}
         resizeMode="contain"
+        accessibilityLabel="Pixel Pets"
       />
-      <Text style={styles.title}>PIXEL PETS</Text>
       <Text style={styles.subtitle}>Hatch and grow your digital pet!</Text>
       <Image
         source={require('../../assets/egg.gif')}
@@ -145,23 +145,7 @@ const styles = StyleSheet.create({
   header: {
     width: 280,
     height: 60,
-    marginBottom: 8,
-  },
-  title: {
-    color: '#fff',
-    fontFamily: 'Courier',
-    fontSize: 32,
-    fontWeight: 'bold',
-    letterSpacing: 4,
-    marginBottom: 6,
-    ...(Platform.select({
-      web: { textShadow: '2px 2px 0 #7a4ed0' },
-      default: {
-        textShadowColor: '#7a4ed0',
-        textShadowOffset: { width: 2, height: 2 },
-        textShadowRadius: 0,
-      },
-    }) as object),
+    marginBottom: 14,
   },
   subtitle: {
     color: '#d6c8ff',
@@ -195,7 +179,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   balance: {
-    color: '#8a76c0',
+    color: '#d6c8ff',
     fontFamily: 'Courier',
     fontSize: 12,
     letterSpacing: 1,
