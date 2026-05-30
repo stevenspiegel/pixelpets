@@ -15,6 +15,7 @@ import { StatBar } from './StatBar';
 import { ActionButton } from './ActionButton';
 import { RarityBadge } from './RarityBadge';
 import { PetSwitcher } from './PetSwitcher';
+import { CreatureSprite } from './CreatureSprite';
 import { BattleStats } from './BattleStats';
 import { MAX_PETS, speciesName, canAscend, effectiveRarity, EGG_COST, BATTLE_ENERGY_COST } from '../state/usePet';
 
@@ -318,11 +319,7 @@ export const GameScreen: React.FC<Props> = ({
           {pets.filter((p) => p.stage !== 'egg' && p.stage !== 'dead').length > 1 && (
             <View style={styles.battlePickWrap}>
               <Text style={styles.battlePickLabel}>BATTLE WITH</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.battlePickRow}
-              >
+              <View style={styles.battlePickRow}>
                 {pets
                   .filter((p) => p.stage !== 'egg' && p.stage !== 'dead')
                   .map((p) => {
@@ -333,7 +330,12 @@ export const GameScreen: React.FC<Props> = ({
                         onPress={() => !active && onSwitchPet(p.id)}
                         style={[styles.battlePickChip, active && styles.battlePickChipActive]}
                       >
-                        <Text style={styles.battlePickEmoji}>{p.species}</Text>
+                        <CreatureSprite
+                          species={p.species}
+                          stage={p.stage}
+                          ascended={p.ascended}
+                          size={40}
+                        />
                         <Text
                           style={[styles.battlePickName, active && styles.battlePickNameActive]}
                           numberOfLines={1}
@@ -343,7 +345,7 @@ export const GameScreen: React.FC<Props> = ({
                       </Pressable>
                     );
                   })}
-              </ScrollView>
+              </View>
             </View>
           )}
 
@@ -691,7 +693,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   battlePickRow: {
-    paddingHorizontal: 4,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     gap: 8,
   },
   battlePickChip: {
@@ -706,9 +710,6 @@ const styles = StyleSheet.create({
   battlePickChipActive: {
     borderColor: '#ff5470',
     backgroundColor: '#3a1a3a',
-  },
-  battlePickEmoji: {
-    fontSize: 26,
   },
   battlePickName: {
     color: '#8a76c0',
