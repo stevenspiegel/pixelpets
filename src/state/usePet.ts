@@ -785,6 +785,31 @@ export const usePet = (userId: string | null) => {
     setCol((c) => (c.pets.some((p) => p.id === id) ? { ...c, activeId: id } : c));
   }, []);
 
+  // Re-read the collection from the cloud, replacing local state. Used after a
+  // marketplace transfer (so an adopted pet appears and a sold one disappears)
+  // and to revert a rejected optimistic change. No-op in local-only mode.
+  // Declared before removePet, which depends on it.
+  const reloadCollection = useCallback(async () => {
+    if (!isSupabaseConfigured || !userRef.current) return;
+    // Flush any pending care edits before replacing local state with the cloud
+    // copy, so a reload (marketplace transfer / failed-op revert) doesn't drop
+    // several seconds of un-synced changes across the whole collection.
+    await syncCloudCollection(colRef.current).catch(() => {});
+    let fresh: Collection;
+    try {
+      fresh = await loadCloudCollection();
+    } catch (e) {
+      // Don't overwrite local state with nothing if the reload fails.
+      console.warn('[pixelpets] reload failed, keeping current state:', (e as Error).message);
+      return;
+    }
+    setCol({
+      pets: fresh.pets.map((p) => applyDecay(p, Date.now())),
+      activeId: fresh.activeId,
+      wallet: fresh.wallet,
+    });
+  }, []);
+
   const removePet = useCallback((id: string) => {
     // Optimistically drop it locally...
     setCol((c) => {
@@ -806,30 +831,6 @@ export const usePet = (userId: string | null) => {
       })();
     }
   }, [reloadCollection]);
-
-  // Re-read the collection from the cloud, replacing local state. Used after a
-  // marketplace transfer (so an adopted pet appears and a sold one disappears)
-  // and to revert a rejected optimistic change. No-op in local-only mode.
-  const reloadCollection = useCallback(async () => {
-    if (!isSupabaseConfigured || !userRef.current) return;
-    // Flush any pending care edits before replacing local state with the cloud
-    // copy, so a reload (marketplace transfer / failed-op revert) doesn't drop
-    // several seconds of un-synced changes across the whole collection.
-    await syncCloudCollection(colRef.current).catch(() => {});
-    let fresh: Collection;
-    try {
-      fresh = await loadCloudCollection();
-    } catch (e) {
-      // Don't overwrite local state with nothing if the reload fails.
-      console.warn('[pixelpets] reload failed, keeping current state:', (e as Error).message);
-      return;
-    }
-    setCol({
-      pets: fresh.pets.map((p) => applyDecay(p, Date.now())),
-      activeId: fresh.activeId,
-      wallet: fresh.wallet,
-    });
-  }, []);
 
   // Can the active pet start a battle right now? Pure check (no side effects)
   // so it's safe to call before contacting the server / picking an opponent.
