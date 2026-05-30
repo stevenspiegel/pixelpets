@@ -88,6 +88,9 @@ export const GameScreen: React.FC<Props> = ({
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState('');
   const [statsView, setStatsView] = useState<'care' | 'battle'>('care');
+  // PvE + PvP are tucked behind a single BATTLE button to keep the home screen
+  // tidy; tapping it reveals the two battle options.
+  const [battleOpen, setBattleOpen] = useState(false);
 
   // Leave edit mode when switching to a different pet.
   useEffect(() => {
@@ -295,38 +298,59 @@ export const GameScreen: React.FC<Props> = ({
         </View>
       )}
 
-      {!isEgg && !isDead && (
+      {!isEgg && !isDead && !battleOpen && (
         <Pressable
-          onPress={tooTired ? undefined : onBattle}
-          disabled={tooTired}
+          onPress={() => setBattleOpen(true)}
           style={({ pressed }) => [
             styles.battleButton,
-            tooTired && styles.battleButtonDisabled,
-            !tooTired && pressed && styles.battleButtonPressed,
+            pressed && styles.battleButtonPressed,
           ]}
         >
           <Text style={styles.battleText}>⚔️ BATTLE</Text>
           <Text style={styles.battleSub}>
-            {tooTired ? `too tired — let ${pet.name} rest` : 'fight a wild challenger for ✦ tokens'}
+            {onPvp ? 'fight a wild challenger or another player' : 'fight a wild challenger for ✦ tokens'}
           </Text>
         </Pressable>
       )}
 
-      {!isEgg && !isDead && onPvp && (
-        <Pressable
-          onPress={tooTired ? undefined : onPvp}
-          disabled={tooTired}
-          style={({ pressed }) => [
-            styles.pvpButton,
-            tooTired && styles.battleButtonDisabled,
-            !tooTired && pressed && styles.battleButtonPressed,
-          ]}
-        >
-          <Text style={styles.battleText}>🤺 PvP BATTLE</Text>
-          <Text style={styles.battleSub}>
-            {tooTired ? `too tired — let ${pet.name} rest` : "challenge another player's pet"}
-          </Text>
-        </Pressable>
+      {!isEgg && !isDead && battleOpen && (
+        <>
+          <Pressable
+            onPress={tooTired ? undefined : onBattle}
+            disabled={tooTired}
+            style={({ pressed }) => [
+              styles.battleButton,
+              tooTired && styles.battleButtonDisabled,
+              !tooTired && pressed && styles.battleButtonPressed,
+            ]}
+          >
+            <Text style={styles.battleText}>⚔️ WILD BATTLE</Text>
+            <Text style={styles.battleSub}>
+              {tooTired ? `too tired — let ${pet.name} rest` : 'fight a wild challenger for ✦ tokens'}
+            </Text>
+          </Pressable>
+
+          {onPvp && (
+            <Pressable
+              onPress={tooTired ? undefined : onPvp}
+              disabled={tooTired}
+              style={({ pressed }) => [
+                styles.pvpButton,
+                tooTired && styles.battleButtonDisabled,
+                !tooTired && pressed && styles.battleButtonPressed,
+              ]}
+            >
+              <Text style={styles.battleText}>🤺 PvP BATTLE</Text>
+              <Text style={styles.battleSub}>
+                {tooTired ? `too tired — let ${pet.name} rest` : "challenge another player's pet"}
+              </Text>
+            </Pressable>
+          )}
+
+          <Pressable onPress={() => setBattleOpen(false)} style={styles.battleCancel} hitSlop={8}>
+            <Text style={styles.battleCancelText}>← back</Text>
+          </Pressable>
+        </>
       )}
 
       {menuItems.length > 0 && (
@@ -616,6 +640,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 3,
     letterSpacing: 1,
+  },
+  battleCancel: {
+    alignSelf: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginTop: 2,
+  },
+  battleCancelText: {
+    color: '#8a76c0',
+    fontFamily: 'Courier',
+    fontSize: 12,
+    letterSpacing: 2,
   },
   menuSection: {
     width: '100%',
