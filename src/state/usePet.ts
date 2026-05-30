@@ -600,6 +600,7 @@ const loadCloudCollection = async (): Promise<Collection> => {
 
 // Make the DB match the client collection: update each pet's care state,
 // delete any rows that were removed, and update the profile (active pet).
+let lastActiveSync: { uid: string; activeId: string | null } | null = null;
 const syncCloudCollection = async (col: Collection): Promise<void> => {
   if (!supabase) return;
   const { data: sess } = await supabase.auth.getSession();
@@ -608,12 +609,18 @@ const syncCloudCollection = async (col: Collection): Promise<void> => {
 
   // Care + wallet are server-owned now (care_action / wallet RPCs), so the
   // client never writes those columns. This sync persists only the active-pet
-  // selection. (Pets are created/removed solely by server RPCs.)
+  // selection — and skips when it's unchanged, so the 10s decay tick doesn't
+  // re-PATCH /profiles with the same value. (Pets are created/removed solely by
+  // server RPCs.)
+  if (lastActiveSync && lastActiveSync.uid === uid && lastActiveSync.activeId === col.activeId) {
+    return;
+  }
   const prof = await supabase
     .from('profiles')
     .update({ active_pet_id: col.activeId })
     .eq('id', uid);
   if (prof.error) console.warn('[pixelpets] update profile error:', prof.error.message);
+  else lastActiveSync = { uid, activeId: col.activeId };
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
