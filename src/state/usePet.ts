@@ -71,6 +71,16 @@ const SPECIES_NAMES: Record<string, string> = {
 export const speciesName = (species: string): string =>
   SPECIES_NAMES[species] ?? 'Critter';
 
+// Pixedex catalog: the hatchable species grouped by rarity tier, for the
+// collection screen. Mirrors SPECIES_BY_RARITY (mythical excluded — it's an
+// ascension form, not a discoverable species).
+export const PIXEDEX_TIERS: { rarity: Rarity; species: readonly string[] }[] = (
+  ['common', 'uncommon', 'rare', 'epic', 'legendary'] as Rarity[]
+).map((rarity) => ({ rarity, species: SPECIES_BY_RARITY[rarity] }));
+
+// Total discoverable species across all tiers.
+export const PIXEDEX_TOTAL = PIXEDEX_TIERS.reduce((n, t) => n + t.species.length, 0);
+
 const RARITY_WEIGHTS: Record<Rarity, number> = {
   common: 60,
   uncommon: 25,

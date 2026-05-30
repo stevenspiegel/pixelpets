@@ -34,6 +34,7 @@ type Props = {
   onStore?: () => void;
   onDaily?: () => void;
   onLeaderboard?: () => void;
+  onPixedex?: () => void;
   onFriends?: () => void;
   onMarketplace?: () => void;
   onLogOut: () => void;
@@ -79,6 +80,7 @@ export const GameScreen: React.FC<Props> = ({
   onStore,
   onDaily,
   onLeaderboard,
+  onPixedex,
   onFriends,
   onMarketplace,
   onLogOut,
@@ -126,6 +128,7 @@ export const GameScreen: React.FC<Props> = ({
   if (onStore) menuItems.push({ key: 'store', icon: '💎', label: 'Buy Tokens', onPress: onStore });
   if (onMarketplace) menuItems.push({ key: 'market', icon: '🏷️', label: 'Marketplace', onPress: onMarketplace });
   if (onLeaderboard) menuItems.push({ key: 'leaderboard', icon: '🏆', label: 'Leaderboard', onPress: onLeaderboard });
+  if (onPixedex) menuItems.push({ key: 'pixedex', icon: '📖', label: 'Pixedex', onPress: onPixedex });
   if (onFriends) menuItems.push({ key: 'friends', icon: '👥', label: 'Friends', onPress: onFriends });
 
   return (
