@@ -204,7 +204,13 @@ export const GameScreen: React.FC<Props> = ({
       </View>
 
       <View style={styles.tama}>
-        <View style={styles.screen}>
+        <View
+          style={[styles.screen, panelW > 0 && { height: panelW }]}
+          onLayout={(e) => {
+            const w = e.nativeEvent.layout.width;
+            if (w && Math.abs(w - panelW) > 1) setPanelW(w);
+          }}
+        >
           {bgImage && (
             <Image source={bgImage} style={styles.screenBg} resizeMode="cover" />
           )}
