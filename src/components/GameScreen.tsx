@@ -98,6 +98,9 @@ export const GameScreen: React.FC<Props> = ({
   // PvE + PvP are tucked behind a single BATTLE button to keep the home screen
   // tidy; tapping it reveals the two battle options.
   const [battleOpen, setBattleOpen] = useState(false);
+  // Measure the panel's rendered width to force a true square (aspectRatio alone
+  // wasn't reliably square, leaving the background cropped/zoomed).
+  const [panelW, setPanelW] = useState(0);
 
   // Leave edit mode when switching to a different pet.
   useEffect(() => {
