@@ -460,6 +460,10 @@ type Collection = {
 
 const EMPTY: Collection = { pets: [], activeId: null, wallet: emptyWallet() };
 
+// Result of a hatch attempt, so the UI can show why it failed (collection full,
+// not enough tokens, …) instead of the button silently doing nothing.
+export type HatchResult = { ok: true } | { ok: false; error: string };
+
 const tickAll = (col: Collection, now: number): Collection => {
   if (col.pets.length === 0) return col;
   const next = col.pets.map((p) => applyDecay(p, now));
@@ -737,40 +741,44 @@ export const usePet = (userId: string | null) => {
     return () => clearInterval(id);
   }, []);
 
-  const hatch = useCallback((name: string) => {
-    if (!userRef.current) return;
+  const hatch = useCallback(async (name: string): Promise<HatchResult> => {
+    if (!userRef.current) return { ok: false, error: 'Not signed in' };
     if (isSupabaseConfigured) {
       // Server rolls the species/rarity/stats, charges the egg cost, and inserts
       // the pet — nothing about it is client-supplied, so it can't be forged.
-      (async () => {
-        const { data, error } = await supabase!.rpc('hatch_pet', { p_name: name });
-        if (error) {
-          console.warn('[pixelpets] hatch error:', error.message);
-          return;
-        }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const res = data as any;
-        const pet = applyDecay(petFromRow(res.pet), Date.now());
-        setCol((c) => ({
-          ...c,
-          pets: c.pets.length >= MAX_PETS ? c.pets : [...c.pets, pet],
-          activeId: pet.id,
-          wallet: { ...c.wallet, tokens: Number(res.tokens) },
-        }));
-      })();
-      return;
-    }
-    const pet = createPet(name);
-    setCol((c) => {
-      if (c.pets.length >= MAX_PETS) return c;
-      if (c.wallet.tokens < EGG_COST) return c;
-      return {
+      const { data, error } = await supabase!.rpc('hatch_pet', { p_name: name });
+      if (error) {
+        // Surface the reason (e.g. "Your collection is full", "Not enough
+        // tokens") instead of failing silently.
+        const msg = error.message.includes(':')
+          ? error.message.slice(error.message.lastIndexOf(':') + 1).trim()
+          : error.message;
+        console.warn('[pixelpets] hatch error:', error.message);
+        return { ok: false, error: msg };
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const res = data as any;
+      const pet = applyDecay(petFromRow(res.pet), Date.now());
+      setCol((c) => ({
         ...c,
-        pets: [...c.pets, pet],
+        pets: c.pets.length >= MAX_PETS ? c.pets : [...c.pets, pet],
         activeId: pet.id,
-        wallet: { ...c.wallet, tokens: c.wallet.tokens - EGG_COST },
-      };
-    });
+        wallet: { ...c.wallet, tokens: Number(res.tokens) },
+      }));
+      return { ok: true };
+    }
+    // Local-only mode.
+    const c = colRef.current;
+    if (c.pets.length >= MAX_PETS) return { ok: false, error: 'Your collection is full' };
+    if (c.wallet.tokens < EGG_COST) return { ok: false, error: 'Not enough tokens' };
+    const pet = createPet(name);
+    setCol((cur) => ({
+      ...cur,
+      pets: [...cur.pets, pet],
+      activeId: pet.id,
+      wallet: { ...cur.wallet, tokens: cur.wallet.tokens - EGG_COST },
+    }));
+    return { ok: true };
   }, []);
 
   const switchPet = useCallback((id: string) => {

@@ -81,9 +81,10 @@ export default function App() {
 
   const ready = authLoaded && (!username || petLoaded);
 
-  const handleHatch = (name: string) => {
-    hatch(name);
-    setAddingNew(false);
+  const handleHatch = async (name: string) => {
+    const res = await hatch(name);
+    if (res.ok) setAddingNew(false); // stay on the hatch screen to show the error
+    return res;
   };
 
   const handleRemove = () => {
