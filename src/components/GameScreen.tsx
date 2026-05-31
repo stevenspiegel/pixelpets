@@ -98,6 +98,9 @@ export const GameScreen: React.FC<Props> = ({
   // PvE + PvP are tucked behind a single BATTLE button to keep the home screen
   // tidy; tapping it reveals the two battle options.
   const [battleOpen, setBattleOpen] = useState(false);
+  // Secondary screens are tucked behind a single MENU button to declutter the
+  // home screen; tapping it reveals the grid of tiles.
+  const [menuOpen, setMenuOpen] = useState(false);
   // Measure the panel's rendered width to force a true square (aspectRatio alone
   // wasn't reliably square, leaving the background cropped/zoomed).
   const [panelW, setPanelW] = useState(0);
@@ -417,9 +420,23 @@ export const GameScreen: React.FC<Props> = ({
         </>
       )}
 
-      {menuItems.length > 0 && (
+      {menuItems.length > 0 && !menuOpen && (
+        <Pressable
+          onPress={() => setMenuOpen(true)}
+          style={({ pressed }) => [styles.menuToggle, pressed && styles.menuTilePressed]}
+        >
+          <Text style={styles.menuToggleText}>☰ MENU</Text>
+        </Pressable>
+      )}
+
+      {menuItems.length > 0 && menuOpen && (
         <View style={styles.menuSection}>
-          <Text style={styles.menuHeader}>MENU</Text>
+          <View style={styles.menuHeaderRow}>
+            <Text style={styles.menuHeader}>MENU</Text>
+            <Pressable onPress={() => setMenuOpen(false)} hitSlop={8}>
+              <Text style={styles.menuClose}>✕ CLOSE</Text>
+            </Pressable>
+          </View>
           <View style={styles.menuGrid}>
             {menuItems.map((m) => (
               <Pressable
