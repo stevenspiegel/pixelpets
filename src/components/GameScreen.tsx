@@ -227,7 +227,7 @@ export const GameScreen: React.FC<Props> = ({
           )}
           <View style={bgImage ? styles.overlayContent : styles.plainContent}>
             <Pet pet={pet} />
-            <Text style={styles.status}>
+            <Text style={[styles.status, bgImage ? styles.statusOnBg : null]}>
               {pet.name} {status}
             </Text>
           </View>
@@ -598,6 +598,14 @@ const styles = StyleSheet.create({
     marginTop: 6,
     textAlign: 'center',
     fontWeight: 'bold',
+  },
+  // On a background scene the dark status text gets lost — switch to white with
+  // a dark shadow/outline so it's readable against any background.
+  statusOnBg: {
+    color: '#fff',
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
   statsBlock: {
     marginTop: 14,
