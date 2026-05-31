@@ -208,19 +208,29 @@ export const GameScreen: React.FC<Props> = ({
 
       <View style={styles.tama}>
         <View
-          style={[styles.screen, panelW > 0 && { height: panelW }]}
+          style={styles.screen}
           onLayout={(e) => {
             const w = e.nativeEvent.layout.width;
             if (w && Math.abs(w - panelW) > 1) setPanelW(w);
           }}
         >
-          {bgImage && (
-            <Image source={bgImage} style={styles.screenBg} resizeMode="cover" />
+          {/* The background is an explicitly SQUARE image sized to the panel's
+              inner width, so it always shows the whole scene (no crop) regardless
+              of how tall the panel's content makes it. The pet + status render on
+              top. */}
+          {bgImage && panelW > 0 && (
+            <Image
+              source={bgImage}
+              style={{ width: panelW, height: panelW, alignSelf: 'center' }}
+              resizeMode="contain"
+            />
           )}
-          <Pet pet={pet} />
-          <Text style={styles.status}>
-            {pet.name} {status}
-          </Text>
+          <View style={bgImage ? styles.overlayContent : styles.plainContent}>
+            <Pet pet={pet} />
+            <Text style={styles.status}>
+              {pet.name} {status}
+            </Text>
+          </View>
         </View>
 
         {!isEgg && !isDead && (
@@ -564,18 +574,22 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     borderColor: '#0d0620',
     borderRadius: 6,
-    padding: 12,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
     overflow: 'hidden',
-    // Square panel so the square (512×512) backgrounds show fully without the
-    // cover-crop that was cutting off the top/bottom.
-    aspectRatio: 1,
-    width: '100%',
   },
-  screenBg: {
+  // Pet + status overlaid on top of the square background image.
+  overlayContent: {
     ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // No-background (Classic) case: keep the original padded panel look.
+  plainContent: {
+    padding: 12,
+    alignItems: 'center',
+    width: '100%',
   },
   status: {
     fontFamily: 'Courier',
