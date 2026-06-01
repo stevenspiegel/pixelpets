@@ -73,6 +73,12 @@ export const PetSwitcher: React.FC<Props> = ({
                 style={styles.tileImage}
                 resizeMode="contain"
               />
+            ) : pet.stage === 'egg' ? (
+              <Image
+                source={require('../../assets/egg.gif')}
+                style={styles.tileImage}
+                resizeMode="contain"
+              />
             ) : (
               <Text style={styles.emoji}>{tileEmoji(pet)}</Text>
             )}
