@@ -180,6 +180,12 @@ export const Pet: React.FC<Props> = ({ pet }) => {
         <Animated.View style={{ transform: [{ translateY }] }}>
           <PixelArt sprite={SPRITES[pet.species]} size={spriteSize} />
         </Animated.View>
+      ) : pet.stage === 'dead' ? (
+        <Animated.Image
+          source={require('../../assets/ghost.png')}
+          style={{ width: spriteSize, height: spriteSize, transform: [{ translateY }] }}
+          resizeMode="contain"
+        />
       ) : (
         <Animated.Text
           style={[
