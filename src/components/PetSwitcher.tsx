@@ -67,6 +67,12 @@ export const PetSwitcher: React.FC<Props> = ({
               pet.stage !== 'dead' &&
               hasSprite(pet.species) ? (
               <PixelArt sprite={SPRITES[pet.species]} size={36} />
+            ) : pet.stage === 'dead' ? (
+              <Image
+                source={require('../../assets/ghost.png')}
+                style={styles.tileImage}
+                resizeMode="contain"
+              />
             ) : (
               <Text style={styles.emoji}>{tileEmoji(pet)}</Text>
             )}
