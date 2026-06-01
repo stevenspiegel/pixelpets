@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Image,
 } from 'react-native';
 import {
   Friend,
@@ -253,7 +254,15 @@ const FriendProfile: React.FC<{
                     size={64}
                   />
                 ) : (
-                  <Text style={styles.eggEmoji}>🥚</Text>
+                  <Image
+                    source={
+                      fp.stage === 'dead'
+                        ? require('../../assets/ghost.png')
+                        : require('../../assets/egg.gif')
+                    }
+                    style={styles.eggImage}
+                    resizeMode="contain"
+                  />
                 )}
                 <Text style={styles.petName} numberOfLines={1}>
                   {fp.name}
@@ -499,6 +508,10 @@ const styles = StyleSheet.create({
   eggEmoji: {
     fontSize: 48,
     lineHeight: 64,
+  },
+  eggImage: {
+    width: 64,
+    height: 64,
   },
   petName: {
     color: '#fff',

@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { PetState } from '../types';
 import {
@@ -159,7 +160,15 @@ export const MarketplaceScreen: React.FC<Props> = ({
                     size={64}
                   />
                 ) : (
-                  <Text style={styles.eggEmoji}>🥚</Text>
+                  <Image
+                    source={
+                      l.stage === 'dead'
+                        ? require('../../assets/ghost.png')
+                        : require('../../assets/egg.gif')
+                    }
+                    style={styles.eggImage}
+                    resizeMode="contain"
+                  />
                 )}
                 <Text style={styles.petName} numberOfLines={1}>
                   {l.name}
@@ -352,6 +361,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   eggEmoji: { fontSize: 48, lineHeight: 64 },
+  eggImage: { width: 64, height: 64 },
   petName: {
     color: '#fff',
     fontFamily: 'Courier',
