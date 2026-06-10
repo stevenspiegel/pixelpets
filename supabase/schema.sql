@@ -388,6 +388,54 @@ begin
 end; $$;
 grant execute on function public.set_active_background(text) to authenticated;
 
+-- ── Slots mini-game (token sink) ──────────────────────────────────────────────
+-- A 3-reel slot machine. The spin is resolved ENTIRELY server-side: the bet is
+-- deducted, the reels rolled, and any payout credited atomically — so the client
+-- can't forge a win (tokens are server-authoritative). The client only animates
+-- the returned reels. Tuned as a net token SINK (~88% RTP): fixed 10-token bet;
+-- two-of-a-kind returns the bet (10); three-of-a-kind pays by symbol.
+-- Symbols (index 0-4): 🍒 🔔 ⭐ 💎 7️⃣
+create or replace function public.slot_spin()
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me     uuid := auth.uid();
+  bet    integer := 10;
+  bal    integer;
+  r1 int; r2 int; r3 int;
+  triple_pay integer[] := array[40, 70, 100, 130, 160];  -- 🍒 🔔 ⭐ 💎 7️⃣
+  payout integer := 0;
+begin
+  select tokens into bal from public.profiles where id = me for update;
+  if bal is null then raise exception 'No profile'; end if;
+  if bal < bet then raise exception 'Not enough tokens'; end if;
+
+  -- Roll three independent reels (0-4).
+  r1 := floor(random() * 5)::int;
+  r2 := floor(random() * 5)::int;
+  r3 := floor(random() * 5)::int;
+
+  if r1 = r2 and r2 = r3 then
+    payout := triple_pay[r1 + 1];           -- three of a kind
+  elsif r1 = r2 or r2 = r3 or r1 = r3 then
+    payout := bet;                          -- two of a kind: bet back
+  end if;
+
+  -- Net: deduct the bet, add the payout, in one update.
+  update public.profiles
+    set tokens = tokens - bet + payout
+    where id = me
+    returning tokens into bal;
+
+  return jsonb_build_object(
+    'reels', jsonb_build_array(r1, r2, r3),
+    'payout', payout,
+    'bet', bet,
+    'tokens', bal
+  );
+end; $$;
+grant execute on function public.slot_spin() to authenticated;
+
 -- ── Pixedex: species a player has ever owned ──────────────────────────────────
 -- A collection log. Unlike the pets table (current pets only), this persists
 -- through release/sale/death, so the Pixedex shows everything you've discovered.

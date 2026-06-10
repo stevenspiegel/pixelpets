@@ -23,6 +23,7 @@ import { MarketplaceScreen } from './src/components/MarketplaceScreen';
 import { StoreScreen } from './src/components/StoreScreen';
 import { PixedexScreen } from './src/components/PixedexScreen';
 import { BackgroundsScreen } from './src/components/BackgroundsScreen';
+import { SlotsScreen } from './src/components/SlotsScreen';
 import { fetchBackgrounds } from './src/state/backgrounds';
 import { purchasesAvailable } from './src/state/purchases';
 
@@ -59,7 +60,7 @@ export default function App() {
   // null = game screen; 'pve'/'pvp' = battle; the rest are full-screen menus.
   const [view, setView] = useState<
     | null | 'pve' | 'pvp' | 'friend' | 'leaderboard' | 'friends' | 'marketplace'
-    | 'daily' | 'store' | 'pixedex' | 'backgrounds'
+    | 'daily' | 'store' | 'slots' | 'pixedex' | 'backgrounds'
   >(null);
   // When battling a specific friend's pet, the opponent pet id (else undefined).
   const [friendOpponent, setFriendOpponent] = useState<string | undefined>(undefined);
@@ -173,6 +174,14 @@ export default function App() {
     screen = <DailyScreen onWalletChange={setWalletTokens} onExit={() => setView(null)} />;
   } else if (view === 'store' && username) {
     screen = <StoreScreen tokens={tokens} onExit={() => setView(null)} />;
+  } else if (view === 'slots' && username) {
+    screen = (
+      <SlotsScreen
+        tokens={tokens}
+        onWalletChange={setWalletTokens}
+        onExit={() => setView(null)}
+      />
+    );
   } else if (view === 'pixedex' && username) {
     screen = <PixedexScreen onExit={() => setView(null)} />;
   } else if (view === 'backgrounds' && username) {
@@ -217,6 +226,7 @@ export default function App() {
         onFriends={isSupabaseConfigured ? () => setView('friends') : undefined}
         onMarketplace={isSupabaseConfigured ? () => setView('marketplace') : undefined}
         onBackgrounds={isSupabaseConfigured ? () => setView('backgrounds') : undefined}
+        onSlots={isSupabaseConfigured ? () => setView('slots') : undefined}
         activeBackground={activeBackground}
         onLogOut={logOut}
       />
