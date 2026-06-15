@@ -436,6 +436,117 @@ begin
 end; $$;
 grant execute on function public.slot_spin() to authenticated;
 
+-- ── Base / Habitat (Phase 1: decoration placement) ───────────────────────────
+-- A per-account home scene showing all the player's pets, decorated with
+-- token-bought items placed on a grid. Mirrors the backgrounds cosmetic: a
+-- server-validated catalog + atomic token spend (clients can't forge price or
+-- ownership), an owned-array, plus a layout jsonb. The display catalog (ids,
+-- names, art, footprints) lives in the client (src/state/base.ts); price + the
+-- valid-id set are mirrored here for validation.
+alter table public.profiles
+  add column if not exists base_decor_owned text[] not null default '{}',
+  add column if not exists base_layout      jsonb  not null default '[]',
+  add column if not exists base_floor       text   not null default 'grass';
+
+-- Grid + placement caps (mirror BASE_GRID / BASE_MAX_ITEMS in src/state/base.ts).
+create or replace function public._base_grid() returns integer
+  language sql immutable as $$ select 6 $$;        -- 6x6 grid
+create or replace function public._base_max_items() returns integer
+  language sql immutable as $$ select 40 $$;       -- anti-abuse cap on placements
+
+-- Decoration catalog: valid ids + token price. Floors ('floor_*') are unlockable
+-- too and share this catalog. Keep in sync with BASE_DECOR in src/state/base.ts.
+create or replace function public._decor_price(p_id text)
+returns integer language sql immutable as $$
+  select case p_id
+    when 'tree'      then 60
+    when 'bush'      then 30
+    when 'fence'     then 20
+    when 'bed'       then 80
+    when 'bowl'      then 40
+    when 'ball'      then 40
+    when 'pond'      then 120
+    when 'rock'      then 25
+    when 'lamp'      then 70
+    when 'flowers'   then 50
+    when 'floor_sand' then 200
+    when 'floor_snow' then 200
+    else null
+  end;
+$$;
+
+-- Unlock a decoration/floor: validate id, charge price atomically, add to the
+-- owned set. Returns { tokens, owned }. Rejects unknown ids and re-buys.
+create or replace function public.unlock_decor(p_id text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me    uuid := auth.uid();
+  price integer := public._decor_price(p_id);
+  bal   integer;
+  owned text[];
+begin
+  if price is null then raise exception 'Unknown item'; end if;
+  select tokens, base_decor_owned into bal, owned from public.profiles where id = me for update;
+  if p_id = any(owned) then raise exception 'Already unlocked'; end if;
+  if bal < price then raise exception 'Not enough tokens'; end if;
+  update public.profiles
+    set tokens = tokens - price,
+        base_decor_owned = array_append(base_decor_owned, p_id)
+    where id = me
+    returning tokens, base_decor_owned into bal, owned;
+  return jsonb_build_object('tokens', bal, 'owned', to_jsonb(owned));
+end; $$;
+grant execute on function public.unlock_decor(text) to authenticated;
+
+-- Save the base layout. Validates that every placed item is OWNED, every id is a
+-- real decoration (not a floor), coordinates are within the grid, and the item
+-- count is capped — so a client can't place items it didn't buy or flood the row.
+-- Also sets the floor (must be 'grass' default or an owned floor_*).
+create or replace function public.save_base_layout(p_layout jsonb, p_floor text)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  me    uuid := auth.uid();
+  owned text[];
+  grid  integer := public._base_grid();
+  item  jsonb;
+  iid   text;
+  ix    int;
+  iy    int;
+  n     int := 0;
+begin
+  if jsonb_typeof(p_layout) <> 'array' then raise exception 'Invalid layout'; end if;
+  if jsonb_array_length(p_layout) > public._base_max_items() then
+    raise exception 'Too many items';
+  end if;
+  select base_decor_owned into owned from public.profiles where id = me;
+
+  for item in select * from jsonb_array_elements(p_layout) loop
+    iid := item->>'id';
+    ix  := (item->>'x')::int;
+    iy  := (item->>'y')::int;
+    if public._decor_price(iid) is null or iid like 'floor_%' then
+      raise exception 'Invalid item %', iid;
+    end if;
+    if not (iid = any(owned)) then raise exception 'Item not owned: %', iid; end if;
+    if ix < 0 or iy < 0 or ix >= grid or iy >= grid then
+      raise exception 'Off-grid placement';
+    end if;
+    n := n + 1;
+  end loop;
+
+  -- Floor: free default, or an owned unlockable floor.
+  if p_floor <> 'grass' and not (p_floor = any(owned)) then
+    raise exception 'Floor not owned';
+  end if;
+
+  update public.profiles
+    set base_layout = p_layout, base_floor = p_floor
+    where id = me;
+end; $$;
+grant execute on function public.save_base_layout(jsonb, text) to authenticated;
+
 -- ── Pixedex: species a player has ever owned ──────────────────────────────────
 -- A collection log. Unlike the pets table (current pets only), this persists
 -- through release/sale/death, so the Pixedex shows everything you've discovered.
