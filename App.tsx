@@ -24,6 +24,7 @@ import { StoreScreen } from './src/components/StoreScreen';
 import { PixedexScreen } from './src/components/PixedexScreen';
 import { BackgroundsScreen } from './src/components/BackgroundsScreen';
 import { SlotsScreen } from './src/components/SlotsScreen';
+import { BaseScreen } from './src/components/BaseScreen';
 import { fetchBackgrounds } from './src/state/backgrounds';
 import { purchasesAvailable } from './src/state/purchases';
 
@@ -60,7 +61,7 @@ export default function App() {
   // null = game screen; 'pve'/'pvp' = battle; the rest are full-screen menus.
   const [view, setView] = useState<
     | null | 'pve' | 'pvp' | 'friend' | 'leaderboard' | 'friends' | 'marketplace'
-    | 'daily' | 'store' | 'slots' | 'pixedex' | 'backgrounds'
+    | 'daily' | 'store' | 'slots' | 'pixedex' | 'backgrounds' | 'base'
   >(null);
   // When battling a specific friend's pet, the opponent pet id (else undefined).
   const [friendOpponent, setFriendOpponent] = useState<string | undefined>(undefined);
@@ -182,6 +183,15 @@ export default function App() {
         onExit={() => setView(null)}
       />
     );
+  } else if (view === 'base' && username) {
+    screen = (
+      <BaseScreen
+        pets={pets}
+        tokens={tokens}
+        onWalletChange={setWalletTokens}
+        onExit={() => setView(null)}
+      />
+    );
   } else if (view === 'pixedex' && username) {
     screen = <PixedexScreen onExit={() => setView(null)} />;
   } else if (view === 'backgrounds' && username) {
@@ -227,6 +237,7 @@ export default function App() {
         onMarketplace={isSupabaseConfigured ? () => setView('marketplace') : undefined}
         onBackgrounds={isSupabaseConfigured ? () => setView('backgrounds') : undefined}
         onSlots={isSupabaseConfigured ? () => setView('slots') : undefined}
+        onBase={isSupabaseConfigured ? () => setView('base') : undefined}
         activeBackground={activeBackground}
         onLogOut={logOut}
       />
