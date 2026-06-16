@@ -18,6 +18,7 @@ import {
   unlockDecor,
   saveBaseLayout,
   Placed,
+  PlacedPet,
 } from '../state/base';
 import { CreatureSprite } from './CreatureSprite';
 
@@ -35,9 +36,12 @@ const CELL = BOARD / BASE_GRID;
 export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onExit }) => {
   const [owned, setOwned] = useState<string[] | null>(null);
   const [layout, setLayout] = useState<Placed[]>([]);
+  const [placedPets, setPlacedPets] = useState<PlacedPet[]>([]);
   const [floor, setFloor] = useState('grass');
   const [editing, setEditing] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null); // decor id to place, or 'erase'
+  // What a tile-tap will do: a decor id to place, 'erase', or 'pet:<id>' to
+  // place a specific pet on the grid.
+  const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -48,6 +52,7 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
       if (!on) return;
       setOwned(b.owned);
       setLayout(b.layout);
+      setPlacedPets(b.pets);
       setFloor(b.floor);
     });
     return () => {
@@ -57,12 +62,31 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
 
   // Living (non-egg/dead) pets that mill about the base.
   const livePets = pets.filter((p) => p.stage !== 'egg' && p.stage !== 'dead');
+  const livePetById = (id: string) => livePets.find((p) => p.id === id);
+  // Only keep placements for pets that still exist + are alive.
+  const validPlaced = placedPets.filter((pp) => !!livePetById(pp.petId));
+  // Pets without a chosen spot fall back to the auto wandering row.
+  const unplacedPets = livePets.filter(
+    (p) => !validPlaced.some((pp) => pp.petId === p.id)
+  );
 
   const onCell = (x: number, y: number) => {
     if (!editing || !selected) return;
     setError(null);
     if (selected === 'erase') {
       setLayout((l) => l.filter((p) => !(p.x === x && p.y === y)));
+      setPlacedPets((pp) => pp.filter((p) => !(p.x === x && p.y === y)));
+      setDirty(true);
+      return;
+    }
+    if (selected.startsWith('pet:')) {
+      const petId = selected.slice(4);
+      setPlacedPets((pp) => {
+        // Remove this pet from any prior cell + clear whatever pet sits on the
+        // target cell, so it's one pet per cell.
+        const without = pp.filter((p) => p.petId !== petId && !(p.x === x && p.y === y));
+        return [...without, { petId, x, y }];
+      });
       setDirty(true);
       return;
     }
@@ -91,7 +115,7 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
     if (busy) return;
     setBusy(true);
     setError(null);
-    const res = await saveBaseLayout(layout, floor);
+    const res = await saveBaseLayout(layout, floor, validPlaced);
     setBusy(false);
     if (!res.ok) {
       setError(res.error);
@@ -145,11 +169,28 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
               </View>
             ))}
 
-            {/* Pets wander the base (laid out in a simple row that wraps). View
-                mode only — hidden while editing so they don't block taps. */}
-            {!editing && livePets.length > 0 && (
+            {/* Pets placed on specific cells render anchored to their tile
+                (both view + edit). pointerEvents none so edit taps reach the
+                cell beneath. */}
+            {validPlaced.map((pp) => {
+              const pet = livePetById(pp.petId);
+              if (!pet) return null;
+              return (
+                <View
+                  key={pp.petId}
+                  pointerEvents="none"
+                  style={[styles.placedPet, { left: pp.x * CELL, top: pp.y * CELL }]}
+                >
+                  <CreatureSprite species={pet.species} stage={pet.stage} ascended={pet.ascended} size={CELL * 0.82} />
+                </View>
+              );
+            })}
+
+            {/* Pets without a chosen spot wander in a simple wrapping row. View
+                mode only — hidden while editing so they don't clutter. */}
+            {!editing && unplacedPets.length > 0 && (
               <View style={styles.petLayer} pointerEvents="none">
-                {livePets.map((p) => (
+                {unplacedPets.map((p) => (
                   <View key={p.id} style={styles.petSlot}>
                     <CreatureSprite species={p.species} stage={p.stage} ascended={p.ascended} size={44} />
                   </View>
@@ -184,11 +225,39 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
               </View>
               <Text style={styles.hint}>
                 {selected === 'erase'
-                  ? 'Tap a tile to remove its decoration.'
+                  ? 'Tap a tile to clear its decoration or pet.'
+                  : selected?.startsWith('pet:')
+                  ? 'Tap a tile to move this pet there.'
                   : selected
                   ? 'Tap a tile to place it. Tap an item below to switch.'
-                  : 'Pick an item below, then tap a tile to place it.'}
+                  : 'Pick a pet or item below, then tap a tile to place it.'}
               </Text>
+
+              {/* Pet placement palette */}
+              {livePets.length > 0 && (
+                <>
+                  <Text style={styles.shopHeader}>PETS</Text>
+                  <View style={styles.shopRow}>
+                    {livePets.map((p) => {
+                      const active = selected === `pet:${p.id}`;
+                      const isPlaced = validPlaced.some((pp) => pp.petId === p.id);
+                      return (
+                        <Pressable
+                          key={p.id}
+                          onPress={() => setSelected(`pet:${p.id}`)}
+                          style={[styles.shopCard, active && styles.shopCardActive]}
+                        >
+                          <CreatureSprite species={p.species} stage={p.stage} ascended={p.ascended} size={34} />
+                          <Text style={styles.shopName} numberOfLines={1}>{p.name}</Text>
+                          <Text style={styles.shopPrice}>
+                            {active ? 'PLACING' : isPlaced ? 'MOVE' : 'PLACE'}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
 
               {/* Floor picker */}
               <Text style={styles.shopHeader}>FLOOR</Text>
@@ -289,6 +358,13 @@ const styles = StyleSheet.create({
     padding: 6,
   },
   petSlot: { margin: 2 },
+  placedPet: {
+    position: 'absolute',
+    width: CELL,
+    height: CELL,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   primaryBtn: {
     backgroundColor: '#7a4ed0',
     borderRadius: 8,
