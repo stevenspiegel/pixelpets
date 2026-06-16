@@ -1168,7 +1168,8 @@ grant update (name) on public.pets to authenticated;
 
 -- Recompute a pet's care state from (now - last_tick), mirroring applyDecay.
 -- Pure helper (no auth); returns the decayed row without persisting.
-create or replace function public._decay_pet_row(pet public.pets)
+drop function if exists public._decay_pet_row(public.pets);
+create or replace function public._decay_pet_row(pet public.pets, p_mult jsonb default '{}')
 returns public.pets
 language plpgsql as $$
 declare
@@ -1177,6 +1178,12 @@ declare
   scaled    double precision;
   sm        double precision := case when pet.asleep then 0.25 else 1 end;
   hd        double precision := 0;
+  -- Base-decoration decay multipliers (1 = full decay). A fueled+placed
+  -- functional item lowers its stat's multiplier (see _base_care_mult).
+  m_hun     double precision := coalesce((p_mult->>'hunger')::double precision, 1);
+  m_hap     double precision := coalesce((p_mult->>'happiness')::double precision, 1);
+  m_cln     double precision := coalesce((p_mult->>'cleanliness')::double precision, 1);
+  m_enr     double precision := coalesce((p_mult->>'energy')::double precision, 1);
 begin
   if pet.stage = 'dead' or raw < 0.5 then return pet; end if;
   -- offline scaling: real time up to 30s, then 10% (scaleElapsed)
@@ -1191,12 +1198,12 @@ begin
     else 'adult' end;
   if pet.stage = 'egg' then pet.last_tick := now_ms; return pet; end if;
 
-  pet.hunger      := greatest(0, least(100, pet.hunger      - scaled * 0.01  * sm));
-  pet.happiness   := greatest(0, least(100, pet.happiness   - scaled * 0.008 * sm));
-  pet.cleanliness := greatest(0, least(100, pet.cleanliness - scaled * 0.005));
+  pet.hunger      := greatest(0, least(100, pet.hunger      - scaled * 0.01  * sm * m_hun));
+  pet.happiness   := greatest(0, least(100, pet.happiness   - scaled * 0.008 * sm * m_hap));
+  pet.cleanliness := greatest(0, least(100, pet.cleanliness - scaled * 0.005 * m_cln));
   pet.energy := case when pet.asleep
     then least(100, pet.energy + scaled * 0.2)
-    else greatest(0, pet.energy - scaled * 0.007) end;
+    else greatest(0, pet.energy - scaled * 0.007 * m_enr) end;
 
   if not pet.asleep then pet.poops := least(pet.poops + scaled / 3600.0, 8); end if;
   if floor(pet.poops) >= 2 and not pet.sick
@@ -1217,7 +1224,7 @@ begin
   pet.last_tick := now_ms;
   return pet;
 end; $$;
-revoke execute on function public._decay_pet_row(public.pets) from public, anon, authenticated;
+revoke execute on function public._decay_pet_row(public.pets, jsonb) from public, anon, authenticated;
 
 -- One entry point for all care: bring the pet current (decay), apply the action
 -- with server-enforced deltas, persist, and return the updated pet (+ any token
@@ -1233,6 +1240,7 @@ declare
   today  text := to_char((now() at time zone 'utc'), 'YYYY-MM-DD');
   used   integer;
   bal    integer;
+  mult   jsonb;
 begin
   if p_action not in ('feed','play','clean','sleep','wake','medicine','tick') then
     raise exception 'Unknown care action %', p_action;
@@ -1240,7 +1248,8 @@ begin
   select * into pet from public.pets where id = p_pet_id and owner = me for update;
   if pet.id is null then raise exception 'That pet is not yours'; end if;
 
-  pet := public._decay_pet_row(pet);  -- bring care state current
+  mult := public._base_care_mult(me);
+  pet := public._decay_pet_row(pet, mult);  -- bring care state current (base-bonus aware)
 
   if pet.stage not in ('dead', 'egg') then
     if p_action = 'feed' and not pet.asleep then
@@ -1339,6 +1348,7 @@ declare
   e_species text; e_rarity text; e_name text; e_stage text := 'adult';
   e_ascb boolean := false;
   bid uuid;
+  mult jsonb;
   adjs text[] := array['Wild','Feral','Rival','Rogue','Fierce','Ancient'];
   opps text[] := array['🦊','🐅','🦈','🐉','🦉','🐍','🦫','🦒','🐊','🦝','🦏','🐘'];
 begin
@@ -1346,7 +1356,8 @@ begin
   if pet.id is null then raise exception 'That pet is not yours'; end if;
   -- Bring care current and charge battle energy SERVER-SIDE (BATTLE_ENERGY_COST
   -- = 20). Energy is server-owned now, so it can't be reset to grind battles.
-  pet := public._decay_pet_row(pet);
+  mult := public._base_care_mult(me);
+  pet := public._decay_pet_row(pet, mult);
   if pet.stage in ('egg', 'dead') then raise exception 'This pet cannot battle'; end if;
   if pet.energy < 20 then raise exception 'Too tired to battle — let your pet rest'; end if;
   update public.pets set
