@@ -536,6 +536,37 @@ begin
 end; $$;
 grant execute on function public.unlock_decor(text) to authenticated;
 
+-- Refill a functional decoration's fuel to a full 48h for a flat token cost.
+-- Server-validated: must be an owned functional item, and the player must have
+-- the tokens. Sets (not extends) filled_until to now + 48h. Returns the new
+-- wallet + full fuel map.
+create or replace function public.refill_decor(p_id text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me     uuid := auth.uid();
+  cost   integer := public._decor_refill_cost();
+  now_ms bigint := (extract(epoch from now()) * 1000)::bigint;
+  bal    integer;
+  owned  text[];
+  fuel   jsonb;
+begin
+  if public._decor_functional_stat(p_id) is null then
+    raise exception 'Not a functional item';
+  end if;
+  select tokens, base_decor_owned into bal, owned
+    from public.profiles where id = me for update;
+  if not (p_id = any(owned)) then raise exception 'You do not own that'; end if;
+  if bal < cost then raise exception 'Not enough tokens'; end if;
+  update public.profiles
+    set tokens = tokens - cost,
+        base_fuel = jsonb_set(base_fuel, array[p_id], to_jsonb(now_ms + public._decor_fuel_ms()))
+    where id = me
+    returning tokens, base_fuel into bal, fuel;
+  return jsonb_build_object('tokens', bal, 'base_fuel', fuel);
+end; $$;
+grant execute on function public.refill_decor(text) to authenticated;
+
 -- Save the base layout. Validates that every placed item is OWNED, every id is a
 -- real decoration (not a floor), coordinates are within the grid, and the item
 -- count is capped — so a client can't place items it didn't buy or flood the row.
