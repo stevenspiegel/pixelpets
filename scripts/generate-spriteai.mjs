@@ -23,6 +23,8 @@
 //   --prompt <text>        Text description of the sprite. Required.
 //   --out <path>           Where to save the generated PNG. Required.
 //   --asset-type <type>    Sprite-AI routing category (default "character").
+//   --gen-size <n>         Ask the API to generate at n x n (e.g. 128 for crisp
+//                          adults; 64 default). Sent as width/height in the body.
 //   --key <sai_sk_...>     API key (or set SPRITE_AI_API_KEY in env/.env).
 //   --timeout <sec>        Max wait for the response (default 120).
 //   Any make-sprite flags (--slug, --stage, --autobg, --bg, --fit, ...) →
@@ -82,7 +84,14 @@ async function main() {
 
   const endpoint = 'https://www.sprite-ai.art/api/sprites';
   const body = { prompt: args.prompt, asset_type: assetType };
-  console.log(`POST ${endpoint}  prompt=${JSON.stringify(args.prompt)} asset_type=${assetType}`);
+  if (args['gen-size'] && args['gen-size'] !== true) {
+    const n = parseInt(args['gen-size'], 10);
+    if (!Number.isInteger(n) || n <= 0) die('--gen-size must be a positive integer');
+    body.width = n;
+    body.height = n;
+  }
+  console.log(`POST ${endpoint}  prompt=${JSON.stringify(args.prompt)} asset_type=${assetType}` +
+    (body.width ? ` size=${body.width}` : ''));
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
