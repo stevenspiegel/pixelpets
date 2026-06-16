@@ -567,6 +567,36 @@ begin
 end; $$;
 grant execute on function public.refill_decor(text) to authenticated;
 
+-- Per-stat decay multipliers for an owner's pets, derived from the base:
+-- a functional item that is BOTH placed (present in base_layout) AND fueled
+-- (now < base_fuel[id]) slows its stat to _decor_decay_mult(); all other stats
+-- stay at 1 (full decay). No auth — called by SECURITY DEFINER care RPCs only.
+create or replace function public._base_care_mult(p_owner uuid)
+returns jsonb
+language plpgsql stable as $$
+declare
+  layout jsonb;
+  fuel   jsonb;
+  now_ms bigint := (extract(epoch from now()) * 1000)::bigint;
+  mult   jsonb := '{"hunger":1,"happiness":1,"cleanliness":1,"energy":1}'::jsonb;
+  stat   text;
+  did    text;
+begin
+  select base_layout, base_fuel into layout, fuel
+    from public.profiles where id = p_owner;
+  if layout is null then return mult; end if;
+  for did in
+    select distinct (item->>'id') from jsonb_array_elements(layout) as item
+  loop
+    stat := public._decor_functional_stat(did);
+    if stat is not null and coalesce((fuel->>did)::bigint, 0) > now_ms then
+      mult := jsonb_set(mult, array[stat], to_jsonb(public._decor_decay_mult()));
+    end if;
+  end loop;
+  return mult;
+end; $$;
+revoke execute on function public._base_care_mult(uuid) from public, anon, authenticated;
+
 -- Save the base layout. Validates that every placed item is OWNED, every id is a
 -- real decoration (not a floor), coordinates are within the grid, and the item
 -- count is capped — so a client can't place items it didn't buy or flood the row.
