@@ -507,6 +507,10 @@ grant execute on function public.unlock_decor(text) to authenticated;
 -- p_pets is an array of { petId, x, y } placing the player's own pets on the
 -- grid (optional — unplaced pets just auto-arrange client-side). Validated the
 -- same way: each pet must belong to the caller and sit within the grid.
+-- Drop the pre-pets 2-arg signature: adding p_pets makes a new overload rather
+-- than replacing it, so the old (jsonb, text) function lingers in DBs that ran
+-- the earlier schema. Remove the orphan so only the 3-arg form remains.
+drop function if exists public.save_base_layout(jsonb, text);
 create or replace function public.save_base_layout(p_layout jsonb, p_floor text, p_pets jsonb default '[]')
 returns void
 language plpgsql security definer set search_path = public as $$
