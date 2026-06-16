@@ -446,6 +446,7 @@ grant execute on function public.slot_spin() to authenticated;
 alter table public.profiles
   add column if not exists base_decor_owned text[] not null default '{}',
   add column if not exists base_layout      jsonb  not null default '[]',
+  add column if not exists base_pets        jsonb  not null default '[]',
   add column if not exists base_floor       text   not null default 'grass';
 
 -- Grid + placement caps (mirror BASE_GRID / BASE_MAX_ITEMS in src/state/base.ts).
@@ -503,7 +504,10 @@ grant execute on function public.unlock_decor(text) to authenticated;
 -- real decoration (not a floor), coordinates are within the grid, and the item
 -- count is capped — so a client can't place items it didn't buy or flood the row.
 -- Also sets the floor (must be 'grass' default or an owned floor_*).
-create or replace function public.save_base_layout(p_layout jsonb, p_floor text)
+-- p_pets is an array of { petId, x, y } placing the player's own pets on the
+-- grid (optional — unplaced pets just auto-arrange client-side). Validated the
+-- same way: each pet must belong to the caller and sit within the grid.
+create or replace function public.save_base_layout(p_layout jsonb, p_floor text, p_pets jsonb default '[]')
 returns void
 language plpgsql security definer set search_path = public as $$
 declare
@@ -514,7 +518,7 @@ declare
   iid   text;
   ix    int;
   iy    int;
-  n     int := 0;
+  pid   text;
 begin
   if jsonb_typeof(p_layout) <> 'array' then raise exception 'Invalid layout'; end if;
   if jsonb_array_length(p_layout) > public._base_max_items() then
@@ -533,7 +537,20 @@ begin
     if ix < 0 or iy < 0 or ix >= grid or iy >= grid then
       raise exception 'Off-grid placement';
     end if;
-    n := n + 1;
+  end loop;
+
+  -- Pet placements: each must be one of the caller's own pets, within the grid.
+  if jsonb_typeof(p_pets) <> 'array' then raise exception 'Invalid pets'; end if;
+  for item in select * from jsonb_array_elements(p_pets) loop
+    pid := item->>'petId';
+    ix  := (item->>'x')::int;
+    iy  := (item->>'y')::int;
+    if ix < 0 or iy < 0 or ix >= grid or iy >= grid then
+      raise exception 'Off-grid pet';
+    end if;
+    if not exists (select 1 from public.pets where id = pid and owner = me) then
+      raise exception 'Pet not yours: %', pid;
+    end if;
   end loop;
 
   -- Floor: free default, or an owned unlockable floor.
@@ -542,10 +559,10 @@ begin
   end if;
 
   update public.profiles
-    set base_layout = p_layout, base_floor = p_floor
+    set base_layout = p_layout, base_floor = p_floor, base_pets = p_pets
     where id = me;
 end; $$;
-grant execute on function public.save_base_layout(jsonb, text) to authenticated;
+grant execute on function public.save_base_layout(jsonb, text, jsonb) to authenticated;
 
 -- ── Pixedex: species a player has ever owned ──────────────────────────────────
 -- A collection log. Unlike the pets table (current pets only), this persists

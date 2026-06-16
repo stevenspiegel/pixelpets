@@ -47,10 +47,12 @@ export const floorColor = (id: string): string =>
   BASE_FLOORS.find((f) => f.id === id)?.color ?? '#2e7d4f';
 
 export type Placed = { id: string; x: number; y: number };
+export type PlacedPet = { petId: string; x: number; y: number };
 
 export type BaseState = {
   owned: string[];
   layout: Placed[];
+  pets: PlacedPet[];
   floor: string;
 };
 
@@ -60,14 +62,14 @@ const cleanError = (msg: string): string =>
   msg.includes(':') ? msg.slice(msg.lastIndexOf(':') + 1).trim() : msg;
 
 export const fetchBase = async (): Promise<BaseState> => {
-  const fallback: BaseState = { owned: [], layout: [], floor: 'grass' };
+  const fallback: BaseState = { owned: [], layout: [], pets: [], floor: 'grass' };
   if (!supabase) return fallback;
   const { data: sess } = await supabase.auth.getSession();
   const uid = sess.session?.user?.id;
   if (!uid) return fallback;
   const { data, error } = await supabase
     .from('profiles')
-    .select('base_decor_owned, base_layout, base_floor')
+    .select('base_decor_owned, base_layout, base_pets, base_floor')
     .eq('id', uid)
     .maybeSingle();
   if (error || !data) {
@@ -79,6 +81,7 @@ export const fetchBase = async (): Promise<BaseState> => {
   return {
     owned: (d.base_decor_owned as string[]) ?? [],
     layout: (d.base_layout as Placed[]) ?? [],
+    pets: (d.base_pets as PlacedPet[]) ?? [],
     floor: (d.base_floor as string) ?? 'grass',
   };
 };
@@ -95,13 +98,19 @@ export const unlockDecor = async (
   return { ok: true, value: { tokens: Number(d.tokens), owned: (d.owned as string[]) ?? [] } };
 };
 
-// Persist the placed layout + floor (server validates ownership/bounds/count).
+// Persist the placed decor + floor + pet positions (server validates
+// ownership/bounds/count and that each placed pet belongs to the caller).
 export const saveBaseLayout = async (
   layout: Placed[],
-  floor: string
+  floor: string,
+  pets: PlacedPet[]
 ): Promise<Result<null>> => {
   if (!supabase) return { ok: false, error: 'Not connected' };
-  const { error } = await supabase.rpc('save_base_layout', { p_layout: layout, p_floor: floor });
+  const { error } = await supabase.rpc('save_base_layout', {
+    p_layout: layout,
+    p_floor: floor,
+    p_pets: pets,
+  });
   if (error) return { ok: false, error: cleanError(error.message) };
   return { ok: true, value: null };
 };
