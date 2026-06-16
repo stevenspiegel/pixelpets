@@ -476,6 +476,34 @@ returns integer language sql immutable as $$
   end;
 $$;
 
+-- Functional-decoration support: a server-owned fuel reservoir per functional
+-- item type. base_fuel maps id → filled_until (epoch ms); while now < that
+-- value the item (if also placed) slows its mapped stat's decay. NOT writable
+-- via save_base_layout — only unlock_decor (free first fill) and refill_decor.
+alter table public.profiles
+  add column if not exists base_fuel jsonb not null default '{}';
+
+-- Which care stat a decoration slows the decay of (null = purely cosmetic).
+-- Keep in sync with FUNCTIONAL_DECOR in src/state/base.ts.
+create or replace function public._decor_functional_stat(p_id text)
+returns text language sql immutable as $$
+  select case p_id
+    when 'bowl' then 'hunger'
+    when 'ball' then 'happiness'
+    when 'bed'  then 'energy'
+    when 'pond' then 'cleanliness'
+    else null
+  end;
+$$;
+
+-- Balance constants (mirror src/state/base.ts).
+create or replace function public._decor_fuel_ms() returns bigint
+  language sql immutable as $$ select (48 * 3600 * 1000)::bigint $$;   -- 48h fill
+create or replace function public._decor_refill_cost() returns integer
+  language sql immutable as $$ select 15 $$;                          -- tokens
+create or replace function public._decor_decay_mult() returns double precision
+  language sql immutable as $$ select 0.6 $$;                         -- fueled → 40% slower
+
 -- Unlock a decoration/floor: validate id, charge price atomically, add to the
 -- owned set. Returns { tokens, owned }. Rejects unknown ids and re-buys.
 create or replace function public.unlock_decor(p_id text)
