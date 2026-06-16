@@ -19,6 +19,10 @@ import {
   fetchBase,
   unlockDecor,
   saveBaseLayout,
+  refillDecor,
+  functionalStat,
+  REFILL_COST,
+  FUEL_FILL_MS,
   Placed,
   PlacedPet,
 } from '../state/base';
@@ -61,6 +65,7 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [fuel, setFuel] = useState<Record<string, number>>({});
 
   useEffect(() => {
     let on = true;
@@ -70,6 +75,7 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
       setLayout(b.layout);
       setPlacedPets(b.pets);
       setFloor(b.floor);
+      setFuel(b.fuel);
     });
     return () => {
       on = false;
@@ -124,6 +130,31 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
       return;
     }
     setOwned(res.value.owned);
+    onWalletChange(res.value.tokens);
+    // The server grants a free first fill on a functional purchase; reflect it
+    // locally so the gauge reads ~48h right away (matches unlock_decor).
+    if (functionalStat(id)) {
+      setFuel((f) => ({ ...f, [id]: Date.now() + FUEL_FILL_MS }));
+    }
+  };
+
+  const fuelLabel = (id: string): string => {
+    const msLeft = (fuel[id] ?? 0) - Date.now();
+    if (msLeft <= 0) return 'Empty';
+    return `Fueled · ${Math.ceil(msLeft / 3600000)}h left`;
+  };
+
+  const onRefill = async (id: string) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await refillDecor(id);
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setFuel(res.value.fuel);
     onWalletChange(res.value.tokens);
   };
 
@@ -315,6 +346,21 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
                       <DecorIcon id={d.id} size={34} />
                       <Text style={styles.shopName} numberOfLines={1}>{d.name}</Text>
                       <Text style={styles.shopPrice}>{own ? (active ? 'SELECTED' : 'PLACE') : `✦ ${d.price}`}</Text>
+                      {functionalStat(d.id) && own && (
+                        <>
+                          <Text style={styles.fuelText}>{fuelLabel(d.id)}</Text>
+                          <Pressable
+                            onPress={() => onRefill(d.id)}
+                            disabled={busy || tokens < REFILL_COST}
+                            style={[
+                              styles.refillBtn,
+                              (busy || tokens < REFILL_COST) && styles.refillBtnDisabled,
+                            ]}
+                          >
+                            <Text style={styles.refillBtnText}>Refill ({REFILL_COST})</Text>
+                          </Pressable>
+                        </>
+                      )}
                     </Pressable>
                   );
                 })}
@@ -433,4 +479,14 @@ const styles = StyleSheet.create({
   floorSwatch: { width: 36, height: 36, borderRadius: 6, marginVertical: 2 },
   shopName: { color: '#fff', fontFamily: 'Courier', fontSize: 12, marginTop: 2 },
   shopPrice: { color: '#ffd24d', fontFamily: 'Courier', fontSize: 11, fontWeight: 'bold', marginTop: 2 },
+  fuelText: { color: '#cfe3ef', fontSize: 10, marginTop: 2 },
+  refillBtn: {
+    backgroundColor: '#3a7d4f',
+    borderRadius: 6,
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    marginTop: 3,
+  },
+  refillBtnDisabled: { opacity: 0.5 },
+  refillBtnText: { color: '#fff', fontSize: 10, fontWeight: '700' },
 });

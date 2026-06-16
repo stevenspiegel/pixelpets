@@ -476,6 +476,34 @@ returns integer language sql immutable as $$
   end;
 $$;
 
+-- Functional-decoration support: a server-owned fuel reservoir per functional
+-- item type. base_fuel maps id → filled_until (epoch ms); while now < that
+-- value the item (if also placed) slows its mapped stat's decay. NOT writable
+-- via save_base_layout — only unlock_decor (free first fill) and refill_decor.
+alter table public.profiles
+  add column if not exists base_fuel jsonb not null default '{}';
+
+-- Which care stat a decoration slows the decay of (null = purely cosmetic).
+-- Keep in sync with FUNCTIONAL_DECOR in src/state/base.ts.
+create or replace function public._decor_functional_stat(p_id text)
+returns text language sql immutable as $$
+  select case p_id
+    when 'bowl' then 'hunger'
+    when 'ball' then 'happiness'
+    when 'bed'  then 'energy'
+    when 'pond' then 'cleanliness'
+    else null
+  end;
+$$;
+
+-- Balance constants (mirror src/state/base.ts).
+create or replace function public._decor_fuel_ms() returns bigint
+  language sql immutable as $$ select (48 * 3600 * 1000)::bigint $$;   -- 48h fill
+create or replace function public._decor_refill_cost() returns integer
+  language sql immutable as $$ select 15 $$;                          -- tokens
+create or replace function public._decor_decay_mult() returns double precision
+  language sql immutable as $$ select 0.6 $$;                         -- fueled → 40% slower
+
 -- Unlock a decoration/floor: validate id, charge price atomically, add to the
 -- owned set. Returns { tokens, owned }. Rejects unknown ids and re-buys.
 create or replace function public.unlock_decor(p_id text)
@@ -493,12 +521,81 @@ begin
   if bal < price then raise exception 'Not enough tokens'; end if;
   update public.profiles
     set tokens = tokens - price,
-        base_decor_owned = array_append(base_decor_owned, p_id)
+        base_decor_owned = array_append(base_decor_owned, p_id),
+        base_fuel = case
+          when public._decor_functional_stat(p_id) is not null then
+            jsonb_set(
+              base_fuel, array[p_id],
+              to_jsonb(((extract(epoch from now()) * 1000)::bigint + public._decor_fuel_ms()))
+            )
+          else base_fuel
+        end
     where id = me
     returning tokens, base_decor_owned into bal, owned;
   return jsonb_build_object('tokens', bal, 'owned', to_jsonb(owned));
 end; $$;
 grant execute on function public.unlock_decor(text) to authenticated;
+
+-- Refill a functional decoration's fuel to a full 48h for a flat token cost.
+-- Server-validated: must be an owned functional item, and the player must have
+-- the tokens. Sets (not extends) filled_until to now + 48h. Returns the new
+-- wallet + full fuel map.
+create or replace function public.refill_decor(p_id text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me     uuid := auth.uid();
+  cost   integer := public._decor_refill_cost();
+  now_ms bigint := (extract(epoch from now()) * 1000)::bigint;
+  bal    integer;
+  owned  text[];
+  fuel   jsonb;
+begin
+  if public._decor_functional_stat(p_id) is null then
+    raise exception 'Not a functional item';
+  end if;
+  select tokens, base_decor_owned into bal, owned
+    from public.profiles where id = me for update;
+  if not (p_id = any(owned)) then raise exception 'You do not own that'; end if;
+  if bal < cost then raise exception 'Not enough tokens'; end if;
+  update public.profiles
+    set tokens = tokens - cost,
+        base_fuel = jsonb_set(base_fuel, array[p_id], to_jsonb(now_ms + public._decor_fuel_ms()))
+    where id = me
+    returning tokens, base_fuel into bal, fuel;
+  return jsonb_build_object('tokens', bal, 'base_fuel', fuel);
+end; $$;
+grant execute on function public.refill_decor(text) to authenticated;
+
+-- Per-stat decay multipliers for an owner's pets, derived from the base:
+-- a functional item that is BOTH placed (present in base_layout) AND fueled
+-- (now < base_fuel[id]) slows its stat to _decor_decay_mult(); all other stats
+-- stay at 1 (full decay). No auth — called by SECURITY DEFINER care RPCs only.
+create or replace function public._base_care_mult(p_owner uuid)
+returns jsonb
+language plpgsql stable as $$
+declare
+  layout jsonb;
+  fuel   jsonb;
+  now_ms bigint := (extract(epoch from now()) * 1000)::bigint;
+  mult   jsonb := '{"hunger":1,"happiness":1,"cleanliness":1,"energy":1}'::jsonb;
+  stat   text;
+  did    text;
+begin
+  select base_layout, base_fuel into layout, fuel
+    from public.profiles where id = p_owner;
+  if layout is null then return mult; end if;
+  for did in
+    select distinct (item->>'id') from jsonb_array_elements(layout) as item
+  loop
+    stat := public._decor_functional_stat(did);
+    if stat is not null and coalesce((fuel->>did)::bigint, 0) > now_ms then
+      mult := jsonb_set(mult, array[stat], to_jsonb(public._decor_decay_mult()));
+    end if;
+  end loop;
+  return mult;
+end; $$;
+revoke execute on function public._base_care_mult(uuid) from public, anon, authenticated;
 
 -- Save the base layout. Validates that every placed item is OWNED, every id is a
 -- real decoration (not a floor), coordinates are within the grid, and the item
@@ -1071,7 +1168,8 @@ grant update (name) on public.pets to authenticated;
 
 -- Recompute a pet's care state from (now - last_tick), mirroring applyDecay.
 -- Pure helper (no auth); returns the decayed row without persisting.
-create or replace function public._decay_pet_row(pet public.pets)
+drop function if exists public._decay_pet_row(public.pets);
+create or replace function public._decay_pet_row(pet public.pets, p_mult jsonb default '{}')
 returns public.pets
 language plpgsql as $$
 declare
@@ -1080,6 +1178,12 @@ declare
   scaled    double precision;
   sm        double precision := case when pet.asleep then 0.25 else 1 end;
   hd        double precision := 0;
+  -- Base-decoration decay multipliers (1 = full decay). A fueled+placed
+  -- functional item lowers its stat's multiplier (see _base_care_mult).
+  m_hun     double precision := coalesce((p_mult->>'hunger')::double precision, 1);
+  m_hap     double precision := coalesce((p_mult->>'happiness')::double precision, 1);
+  m_cln     double precision := coalesce((p_mult->>'cleanliness')::double precision, 1);
+  m_enr     double precision := coalesce((p_mult->>'energy')::double precision, 1);
 begin
   if pet.stage = 'dead' or raw < 0.5 then return pet; end if;
   -- offline scaling: real time up to 30s, then 10% (scaleElapsed)
@@ -1094,12 +1198,12 @@ begin
     else 'adult' end;
   if pet.stage = 'egg' then pet.last_tick := now_ms; return pet; end if;
 
-  pet.hunger      := greatest(0, least(100, pet.hunger      - scaled * 0.01  * sm));
-  pet.happiness   := greatest(0, least(100, pet.happiness   - scaled * 0.008 * sm));
-  pet.cleanliness := greatest(0, least(100, pet.cleanliness - scaled * 0.005));
+  pet.hunger      := greatest(0, least(100, pet.hunger      - scaled * 0.01  * sm * m_hun));
+  pet.happiness   := greatest(0, least(100, pet.happiness   - scaled * 0.008 * sm * m_hap));
+  pet.cleanliness := greatest(0, least(100, pet.cleanliness - scaled * 0.005 * m_cln));
   pet.energy := case when pet.asleep
     then least(100, pet.energy + scaled * 0.2)
-    else greatest(0, pet.energy - scaled * 0.007) end;
+    else greatest(0, pet.energy - scaled * 0.007 * m_enr) end;
 
   if not pet.asleep then pet.poops := least(pet.poops + scaled / 3600.0, 8); end if;
   if floor(pet.poops) >= 2 and not pet.sick
@@ -1120,7 +1224,7 @@ begin
   pet.last_tick := now_ms;
   return pet;
 end; $$;
-revoke execute on function public._decay_pet_row(public.pets) from public, anon, authenticated;
+revoke execute on function public._decay_pet_row(public.pets, jsonb) from public, anon, authenticated;
 
 -- One entry point for all care: bring the pet current (decay), apply the action
 -- with server-enforced deltas, persist, and return the updated pet (+ any token
@@ -1136,6 +1240,7 @@ declare
   today  text := to_char((now() at time zone 'utc'), 'YYYY-MM-DD');
   used   integer;
   bal    integer;
+  mult   jsonb;
 begin
   if p_action not in ('feed','play','clean','sleep','wake','medicine','tick') then
     raise exception 'Unknown care action %', p_action;
@@ -1143,7 +1248,8 @@ begin
   select * into pet from public.pets where id = p_pet_id and owner = me for update;
   if pet.id is null then raise exception 'That pet is not yours'; end if;
 
-  pet := public._decay_pet_row(pet);  -- bring care state current
+  mult := public._base_care_mult(me);
+  pet := public._decay_pet_row(pet, mult);  -- bring care state current (base-bonus aware)
 
   if pet.stage not in ('dead', 'egg') then
     if p_action = 'feed' and not pet.asleep then
@@ -1242,6 +1348,7 @@ declare
   e_species text; e_rarity text; e_name text; e_stage text := 'adult';
   e_ascb boolean := false;
   bid uuid;
+  mult jsonb;
   adjs text[] := array['Wild','Feral','Rival','Rogue','Fierce','Ancient'];
   opps text[] := array['🦊','🐅','🦈','🐉','🦉','🐍','🦫','🦒','🐊','🦝','🦏','🐘'];
 begin
@@ -1249,7 +1356,8 @@ begin
   if pet.id is null then raise exception 'That pet is not yours'; end if;
   -- Bring care current and charge battle energy SERVER-SIDE (BATTLE_ENERGY_COST
   -- = 20). Energy is server-owned now, so it can't be reset to grind battles.
-  pet := public._decay_pet_row(pet);
+  mult := public._base_care_mult(me);
+  pet := public._decay_pet_row(pet, mult);
   if pet.stage in ('egg', 'dead') then raise exception 'This pet cannot battle'; end if;
   if pet.energy < 20 then raise exception 'Too tired to battle — let your pet rest'; end if;
   update public.pets set
