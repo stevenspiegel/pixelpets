@@ -521,7 +521,15 @@ begin
   if bal < price then raise exception 'Not enough tokens'; end if;
   update public.profiles
     set tokens = tokens - price,
-        base_decor_owned = array_append(base_decor_owned, p_id)
+        base_decor_owned = array_append(base_decor_owned, p_id),
+        base_fuel = case
+          when public._decor_functional_stat(p_id) is not null then
+            jsonb_set(
+              base_fuel, array[p_id],
+              to_jsonb(((extract(epoch from now()) * 1000)::bigint + public._decor_fuel_ms()))
+            )
+          else base_fuel
+        end
     where id = me
     returning tokens, base_decor_owned into bal, owned;
   return jsonb_build_object('tokens', bal, 'owned', to_jsonb(owned));
