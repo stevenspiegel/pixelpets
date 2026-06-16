@@ -46,6 +46,27 @@ export const decorById = (id: string): DecorDef | undefined =>
 export const floorColor = (id: string): string =>
   BASE_FLOORS.find((f) => f.id === id)?.color ?? '#2e7d4f';
 
+// Care stats a functional decoration can slow the decay of. Mirrors
+// _decor_functional_stat in supabase/schema.sql.
+export type CareStat = 'hunger' | 'happiness' | 'cleanliness' | 'energy';
+
+// Functional decorations: id → the stat it slows while placed + fueled.
+// Mirrors _decor_functional_stat in supabase/schema.sql (server is source of truth).
+export const FUNCTIONAL_DECOR: Record<string, CareStat> = {
+  bowl: 'hunger',
+  ball: 'happiness',
+  bed: 'energy',
+  pond: 'cleanliness',
+};
+
+// Balance constants — mirror _decor_fuel_ms / _decor_refill_cost / _decor_decay_mult.
+export const FUEL_FILL_MS = 48 * 3600 * 1000; // a full reservoir = 48h
+export const REFILL_COST = 15;                // tokens to refill to full
+export const DECAY_MULT = 0.6;                // fueled item → 40% slower decay
+
+export const functionalStat = (id: string): CareStat | undefined =>
+  FUNCTIONAL_DECOR[id];
+
 export type Placed = { id: string; x: number; y: number };
 export type PlacedPet = { petId: string; x: number; y: number };
 
@@ -54,6 +75,7 @@ export type BaseState = {
   layout: Placed[];
   pets: PlacedPet[];
   floor: string;
+  fuel: Record<string, number>; // decor id → filled_until (epoch ms)
 };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -62,14 +84,14 @@ const cleanError = (msg: string): string =>
   msg.includes(':') ? msg.slice(msg.lastIndexOf(':') + 1).trim() : msg;
 
 export const fetchBase = async (): Promise<BaseState> => {
-  const fallback: BaseState = { owned: [], layout: [], pets: [], floor: 'grass' };
+  const fallback: BaseState = { owned: [], layout: [], pets: [], floor: 'grass', fuel: {} };
   if (!supabase) return fallback;
   const { data: sess } = await supabase.auth.getSession();
   const uid = sess.session?.user?.id;
   if (!uid) return fallback;
   const { data, error } = await supabase
     .from('profiles')
-    .select('base_decor_owned, base_layout, base_pets, base_floor')
+    .select('base_decor_owned, base_layout, base_pets, base_floor, base_fuel')
     .eq('id', uid)
     .maybeSingle();
   if (error || !data) {
@@ -83,6 +105,7 @@ export const fetchBase = async (): Promise<BaseState> => {
     layout: (d.base_layout as Placed[]) ?? [],
     pets: (d.base_pets as PlacedPet[]) ?? [],
     floor: (d.base_floor as string) ?? 'grass',
+    fuel: (d.base_fuel as Record<string, number>) ?? {},
   };
 };
 
@@ -96,6 +119,21 @@ export const unlockDecor = async (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const d = data as any;
   return { ok: true, value: { tokens: Number(d.tokens), owned: (d.owned as string[]) ?? [] } };
+};
+
+// Refill a functional decoration's fuel to full; server charges REFILL_COST.
+export const refillDecor = async (
+  id: string
+): Promise<Result<{ tokens: number; fuel: Record<string, number> }>> => {
+  if (!supabase) return { ok: false, error: 'Not connected' };
+  const { data, error } = await supabase.rpc('refill_decor', { p_id: id });
+  if (error) return { ok: false, error: cleanError(error.message) };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const d = data as any;
+  return {
+    ok: true,
+    value: { tokens: Number(d.tokens), fuel: (d.base_fuel as Record<string, number>) ?? {} },
+  };
 };
 
 // Persist the placed decor + floor + pet positions (server validates
