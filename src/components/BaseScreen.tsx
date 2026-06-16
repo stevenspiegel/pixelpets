@@ -6,8 +6,10 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { PetState } from '../types';
+import { decorArt } from '../base/images';
 import {
   BASE_GRID,
   BASE_DECOR,
@@ -32,6 +34,20 @@ type Props = {
 // Cell size for the rendered grid (square board, scaled to fit ~340px).
 const BOARD = 336;
 const CELL = BOARD / BASE_GRID;
+
+// Renders a decoration's PNG art when present (assets/base/<id>.png), falling
+// back to the catalog emoji glyph until real art is dropped in.
+const DecorIcon: React.FC<{ id: string; size: number }> = ({ id, size }) => {
+  const art = decorArt(id);
+  if (art) {
+    return <Image source={art} style={{ width: size, height: size }} resizeMode="contain" />;
+  }
+  return (
+    <Text style={{ fontSize: size * 0.78, lineHeight: size }}>
+      {decorById(id)?.glyph ?? '?'}
+    </Text>
+  );
+};
 
 export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onExit }) => {
   const [owned, setOwned] = useState<string[] | null>(null);
@@ -158,11 +174,7 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
                       onPress={() => onCell(x, y)}
                       style={[styles.cell, editing && styles.cellEditing]}
                     >
-                      {here && (
-                        <Text style={styles.decorGlyph}>
-                          {decorById(here.id)?.glyph ?? '?'}
-                        </Text>
-                      )}
+                      {here && <DecorIcon id={here.id} size={CELL * 0.78} />}
                     </Pressable>
                   );
                 })}
@@ -300,7 +312,7 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
                       onPress={() => (own ? setSelected(d.id) : onUnlock(d.id))}
                       style={[styles.shopCard, active && styles.shopCardActive]}
                     >
-                      <Text style={styles.shopGlyph}>{d.glyph}</Text>
+                      <DecorIcon id={d.id} size={34} />
                       <Text style={styles.shopName} numberOfLines={1}>{d.name}</Text>
                       <Text style={styles.shopPrice}>{own ? (active ? 'SELECTED' : 'PLACE') : `✦ ${d.price}`}</Text>
                     </Pressable>
