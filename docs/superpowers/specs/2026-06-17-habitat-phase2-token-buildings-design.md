@@ -27,6 +27,11 @@ something over time**, capped, and are **collected on a tap**.
 Out of scope: multiples of a building, level 4+, Phase 3 raiding, any real-money
 entanglement. All income is earned-token only.
 
+**Art constraint:** every building sprite (and any new icon) MUST be custom,
+generated via the project's Sprite-AI pipeline (`make-base.mjs` →
+`assets/base/<id>.png` → `src/base/images.ts`). No third-party / stock / clip art.
+Emoji glyphs are temporary placeholders in code only; shipped art is Sprite-AI.
+
 ---
 
 ## Architecture — Approach A (jsonb on `profiles`, keyed by type)
