@@ -436,34 +436,6 @@ const FOX: Sprite = [
   '........................',
 ];
 
-// 🦝 raccoon — gray with black mask
-const RACCOON: Sprite = [
-  '........................',
-  '........................',
-  '......GG........GG......',
-  '.....GgggG....GgggG.....',
-  '....GggggGG..GGggggG....',
-  '....GggggggGggggggG.....',
-  '...GgggggggggggggggG....',
-  '..GggggggggggggggggGG...',
-  '..GgggggggggggggggggG...',
-  '..GgkkkkggggggggkkkkG...',  // black mask
-  '..GkkkkkkggggggkkkkkkG..',
-  '..GkkkkkkkggggkkkkkkkG..',
-  '..GkkkwkkggggggkkwkkkG..',  // eyes white
-  '..Gkkkkkkgggggggkkkkkk..',
-  '..Gggggggggkggggggggg...',  // nose
-  '..GggggggwwwwggggggggG..',
-  '...Ggggggggggggggggg....',
-  '....GggggggggggggggG....',
-  '.....GggggggggggggG.....',
-  '......GggggggggggG......',
-  '.......GG......GG.......',
-  '........................',
-  '........................',
-  '........................',
-];
-
 // 🦨 skunk — black body with white stripe down back
 const SKUNK: Sprite = [
   '........................',
@@ -916,34 +888,6 @@ const ELEPHANT: Sprite = [
   '........................',
 ];
 
-// 🦏 rhino — gray with big horn
-const RHINO: Sprite = [
-  '........................',
-  '........................',
-  '........................',
-  '...........www..........',  // horn
-  '...........www..........',
-  '..........wwwww.........',
-  '..........GGGGG.........',
-  '.........GgggggG........',
-  '.........Gggkggg........',  // eye
-  '.........Ggggggg........',
-  '......GGGGgggggGG.......',
-  '.....GggGgggggGGgg......',
-  '....GgggggggggGGggg.....',  // body
-  '...Gggggggggggggggg.....',
-  '..Gggggggggggggggggg....',
-  '..Ggggggggggggggggggg...',
-  '..GggggggggggggggggggG..',
-  '..GgggggggggggggggggGGg.',  // tail
-  '..GgggggggggggggggggG...',
-  '..gg.gg.....gg..gg......',
-  '..gg.gg.....gg..gg......',
-  '........................',
-  '........................',
-  '........................',
-];
-
 // 🐊 crocodile — green long body, jagged teeth
 const CROCODILE: Sprite = [
   '........................',
@@ -1095,7 +1039,6 @@ export const SPRITES: Record<string, Sprite> = {
   // epic
   '🐅': TIGER,
   '🐘': ELEPHANT,
-  '🦏': RHINO,
   '🐊': CROCODILE,
   '🦈': SHARK,
   '🦒': GIRAFFE,
@@ -1112,7 +1055,6 @@ export const SPRITES: Record<string, Sprite> = {
   '🦫': BEAVER,
   // uncommon
   '🦊': FOX,
-  '🦝': RACCOON,
   '🦨': SKUNK,
   '🐍': SNAKE,
   '🦎': LIZARD,

@@ -41,23 +41,24 @@ const LEGACY_RARITY: Record<string, Rarity> = {
   '🐦': 'common',  '🐠': 'common',
   '🐶': 'common',  '🐱': 'common',  '🐰': 'common',
   '🐭': 'common',  '🐹': 'common',  '🐁': 'common',  '🐀': 'common',
-  '🐸': 'uncommon', '🦝': 'uncommon', '🦨': 'uncommon',
+  '🐸': 'uncommon', '🦨': 'uncommon',
   '🐺': 'rare',    '🐼': 'rare',    '🐨': 'rare',  '🦡': 'rare',  '🦦': 'rare',
   '🦁': 'epic',    '🐯': 'epic',    '🦛': 'epic',  '🦚': 'epic',  '🦬': 'epic',
   '🐲': 'legendary', '🦕': 'legendary', // 🦕 sauropod retired from the pool
-  // 🦌 deer + 🦏 rhino retired from the pool; 🦖 T-Rex moved to epic (still hatchable).
-  '🦌': 'rare', '🦏': 'epic',
+  // 🦌 deer retired from the pool; 🦖 T-Rex moved to epic (still hatchable).
+  // 🦏 rhino + 🦝 raccoon removed entirely.
+  '🦌': 'rare',
 };
 
 // Human-readable name for each species emoji, used in the UI.
 const SPECIES_NAMES: Record<string, string> = {
   '🐕': 'Dog',     '🐈': 'Cat',      '🐇': 'Rabbit',  '🐁': 'Mouse',
   '🐀': 'Rat',     '🐦': 'Bird',     '🐢': 'Turtle',  '🐠': 'Fish',
-  '🦊': 'Fox',     '🦝': 'Raccoon',  '🦨': 'Skunk',   '🐍': 'Snake',
+  '🦊': 'Fox',     '🦨': 'Skunk',    '🐍': 'Snake',
   '🦎': 'Lizard',  '🦇': 'Bat',      '🦔': 'Hedgehog','🐧': 'Penguin',
   '🦡': 'Badger',  '🦌': 'Deer',     '🦥': 'Sloth',   '🦉': 'Owl',
   '🦅': 'Eagle',   '🦘': 'Kangaroo', '🦦': 'Otter',   '🦫': 'Beaver',
-  '🐅': 'Tiger',   '🐘': 'Elephant', '🦏': 'Rhino',   '🐊': 'Crocodile',
+  '🐅': 'Tiger',   '🐘': 'Elephant', '🐊': 'Crocodile',
   '🦈': 'Shark',   '🦒': 'Giraffe',  '🦚': 'Peacock', '🦬': 'Bison',
   '🐉': 'Dragon',  '🦄': 'Unicorn',  '🧜': 'Mermaid', '🦖': 'T-Rex',
   '🦕': 'Sauropod','🐙': 'Octopus',
