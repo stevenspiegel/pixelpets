@@ -4,13 +4,13 @@ import { Combatant } from './engine';
 
 // Species pool for wild opponents (all have sprites in the project).
 const OPPONENT_SPECIES = [
-  '🦊', '🐅', '🦈', '🐉', '🦉', '🐍', '🦫', '🦒', '🐊', '🦝', '🦏', '🐘',
+  '🦊', '🐅', '🦈', '🐉', '🦉', '🐍', '🦫', '🦒', '🐊', '🐘',
 ];
 
 const RARITY_BY_SPECIES: Record<string, Rarity> = {
-  '🦊': 'uncommon', '🐍': 'uncommon', '🦝': 'uncommon',
+  '🦊': 'uncommon', '🐍': 'uncommon',
   '🦉': 'rare', '🦫': 'rare',
-  '🐅': 'epic', '🦈': 'epic', '🦒': 'epic', '🐊': 'epic', '🦏': 'epic', '🐘': 'epic',
+  '🐅': 'epic', '🦈': 'epic', '🦒': 'epic', '🐊': 'epic', '🐘': 'epic',
   '🐉': 'legendary',
 };
 
