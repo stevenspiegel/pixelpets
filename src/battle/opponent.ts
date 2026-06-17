@@ -1,18 +1,18 @@
 import { PetState, Rarity } from '../types';
-import { battleStats, speciesName } from '../state/usePet';
+import { battleStats, speciesName, PIXEDEX_TIERS } from '../state/usePet';
 import { Combatant } from './engine';
 
-// Species pool for wild opponents (all have sprites in the project).
-const OPPONENT_SPECIES = [
-  '🦊', '🐅', '🦈', '🐉', '🦉', '🐍', '🦫', '🦒', '🐊', '🐘',
-];
+// Wild opponents are drawn from the full hatchable roster. Derived from
+// PIXEDEX_TIERS (the Pixedex catalog) so the opponent pool can never drift
+// from the species you can actually hatch. Ascension-only mythical forms are
+// excluded since they aren't hatchable.
+const RARITY_BY_SPECIES: Record<string, Rarity> = Object.fromEntries(
+  PIXEDEX_TIERS.flatMap(({ rarity, species }) =>
+    species.map((s) => [s, rarity] as const),
+  ),
+);
 
-const RARITY_BY_SPECIES: Record<string, Rarity> = {
-  '🦊': 'uncommon', '🐍': 'uncommon',
-  '🦉': 'rare', '🦫': 'rare',
-  '🐅': 'epic', '🦈': 'epic', '🦒': 'epic', '🐊': 'epic', '🐘': 'epic',
-  '🐉': 'legendary',
-};
+const OPPONENT_SPECIES = Object.keys(RARITY_BY_SPECIES);
 
 const ADJECTIVES = ['Wild', 'Feral', 'Rival', 'Rogue', 'Fierce', 'Ancient'];
 
