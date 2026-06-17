@@ -598,6 +598,90 @@ begin
 end; $$;
 revoke execute on function public._base_care_mult(uuid) from public, anon, authenticated;
 
+-- ── Phase 2: token buildings ──────────────────────────────────────────────────
+-- One-of-each, upgradeable structures placed on the habitat grid that passively
+-- accrue over time, collected on a tap. State lives in base_buildings jsonb keyed
+-- by type: { "<type>": { level, x, y, collected_at } }. collected_at is epoch ms
+-- (same unit as base_fuel). Accrued yield is NEVER stored — it's derived server-
+-- side from now()-elapsed at collect time (cheat-proof), exactly like refill_decor.
+-- The catalog below is the source of truth; src/state/base.ts BUILDINGS mirrors it.
+alter table public.profiles
+  add column if not exists base_buildings jsonb   not null default '{}'::jsonb,
+  add column if not exists egg_shards     integer not null default 0;
+
+create or replace function public._building_types() returns text[]
+  language sql immutable as $$ select array['mine','incubator','feeder','vault'] $$;
+
+create or replace function public._building_max_level(p_type text) returns integer
+  language sql immutable as $$ select 3 $$;   -- 3 levels each (first build)
+
+create or replace function public._building_build_cost(p_type text) returns integer
+  language sql immutable as $$
+  select case p_type
+    when 'mine' then 150 when 'incubator' then 200
+    when 'feeder' then 120 when 'vault' then 250 else null end;
+$$;
+
+-- Tokens to go from p_level → p_level+1; null when already at max level.
+create or replace function public._building_upgrade_cost(p_type text, p_level integer) returns integer
+  language sql immutable as $$
+  select case p_level when 1 then 80 when 2 then 160 else null end;
+$$;
+
+-- Accrual rate in UNITS PER MILLISECOND (mine→tokens, incubator→shards).
+-- Per-hour rates L1 1 / L2 1.5 / L3 2, divided by 3,600,000.
+create or replace function public._building_rate(p_type text, p_level integer) returns double precision
+  language sql immutable as $$
+  select (case p_level when 1 then 1.0 when 2 then 1.5 when 3 then 2.0 else 0 end) / 3600000.0;
+$$;
+
+-- Reservoir cap (max accrued units between collects) for accrual buildings.
+create or replace function public._building_cap(p_type text, p_level integer) returns integer
+  language sql immutable as $$
+  select case p_level when 1 then 12 when 2 then 20 when 3 then 30 else 0 end;
+$$;
+
+-- Cooldown in ms for cooldown buildings (feeder, vault).
+create or replace function public._building_cooldown_ms(p_type text, p_level integer) returns bigint
+  language sql immutable as $$
+  select ((case p_type
+    when 'feeder' then (case p_level when 1 then 12 when 2 then 8  when 3 then 6  else 0 end)
+    when 'vault'  then (case p_level when 1 then 24 when 2 then 20 when 3 then 16 else 0 end)
+    else 0 end) * 3600 * 1000)::bigint;
+$$;
+
+-- Feeder: fraction (0..1) each care stat is topped up by, per level.
+create or replace function public._building_feeder_pct(p_level integer) returns double precision
+  language sql immutable as $$
+  select case p_level when 1 then 0.40 when 2 then 0.70 when 3 then 1.0 else 0 end;
+$$;
+
+-- Vault: random chest payout in tokens within the level's range. Server-rolled
+-- (volatile), like slot_spin — the client can never request an amount.
+create or replace function public._building_vault_roll(p_level integer) returns integer
+  language plpgsql volatile as $$
+  declare lo int; hi int;
+  begin
+    case p_level
+      when 1 then lo := 5;  hi := 25;
+      when 2 then lo := 10; hi := 40;
+      when 3 then lo := 15; hi := 60;
+      else lo := 0; hi := 0;
+    end case;
+    return lo + floor(random() * (hi - lo + 1))::int;
+  end; $$;
+
+-- These are internal helpers — callable only by the SECURITY DEFINER RPCs below.
+revoke execute on function public._building_types()                       from public, anon, authenticated;
+revoke execute on function public._building_max_level(text)               from public, anon, authenticated;
+revoke execute on function public._building_build_cost(text)              from public, anon, authenticated;
+revoke execute on function public._building_upgrade_cost(text, integer)   from public, anon, authenticated;
+revoke execute on function public._building_rate(text, integer)           from public, anon, authenticated;
+revoke execute on function public._building_cap(text, integer)            from public, anon, authenticated;
+revoke execute on function public._building_cooldown_ms(text, integer)    from public, anon, authenticated;
+revoke execute on function public._building_feeder_pct(integer)           from public, anon, authenticated;
+revoke execute on function public._building_vault_roll(integer)           from public, anon, authenticated;
+
 -- Save the base layout. Validates that every placed item is OWNED, every id is a
 -- real decoration (not a floor), coordinates are within the grid, and the item
 -- count is capped — so a client can't place items it didn't buy or flood the row.
