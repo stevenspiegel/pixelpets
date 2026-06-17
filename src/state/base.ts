@@ -17,11 +17,15 @@ export type DecorDef = {
   h?: number;
   // A simple stub glyph used until real decoration art is dropped in.
   glyph: string;
+  // Render the art edge-to-edge (full cell) instead of inset, so copies in
+  // adjacent cells touch. Used by the fence pieces, whose art tiles seamlessly.
+  tile?: boolean;
 };
 
 // Decorations placeable on the grid.
 export const BASE_DECOR: DecorDef[] = [
-  { id: 'fence', name: 'Fence', price: 20, glyph: '🪵' },
+  { id: 'fence', name: 'Fence ↔', price: 20, glyph: '🪵', tile: true },
+  { id: 'fence_v', name: 'Fence ↕', price: 20, glyph: '🪵', tile: true },
   { id: 'rock', name: 'Rock', price: 25, glyph: '🪨' },
   { id: 'bush', name: 'Bush', price: 30, glyph: '🌿' },
   { id: 'bowl', name: 'Food Bowl', price: 40, glyph: '🥣' },
