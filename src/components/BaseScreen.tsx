@@ -41,10 +41,12 @@ const CELL = BOARD / BASE_GRID;
 
 // Renders a decoration's PNG art when present (assets/base/<id>.png), falling
 // back to the catalog emoji glyph until real art is dropped in.
-const DecorIcon: React.FC<{ id: string; size: number }> = ({ id, size }) => {
+const DecorIcon: React.FC<{ id: string; size: number; bleed?: boolean }> = ({ id, size, bleed }) => {
   const art = decorArt(id);
   if (art) {
-    return <Image source={art} style={{ width: size, height: size }} resizeMode="contain" />;
+    // Tiling items (fences) fill the cell so neighbours touch; everything else
+    // is contained with a little breathing room.
+    return <Image source={art} style={{ width: size, height: size }} resizeMode={bleed ? 'cover' : 'contain'} />;
   }
   return (
     <Text style={{ fontSize: size * 0.78, lineHeight: size }}>
@@ -199,13 +201,14 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
               <View key={y} style={styles.row}>
                 {Array.from({ length: BASE_GRID }).map((_, x) => {
                   const here = placedAt(x, y);
+                  const tile = here ? decorById(here.id)?.tile : false;
                   return (
                     <Pressable
                       key={x}
                       onPress={() => onCell(x, y)}
                       style={[styles.cell, editing && styles.cellEditing]}
                     >
-                      {here && <DecorIcon id={here.id} size={CELL * 0.78} />}
+                      {here && <DecorIcon id={here.id} size={tile ? CELL : CELL * 0.78} bleed={tile} />}
                     </Pressable>
                   );
                 })}

@@ -7,6 +7,7 @@ import { ImageSourcePropType } from 'react-native';
 // placeholders.
 export const DECOR_ART: Record<string, ImageSourcePropType> = {
   fence: require('../../assets/base/fence.png'),
+  fence_v: require('../../assets/base/fence_v.png'),
   rock: require('../../assets/base/rock.png'),
   bush: require('../../assets/base/bush.png'),
   bowl: require('../../assets/base/bowl.png'),

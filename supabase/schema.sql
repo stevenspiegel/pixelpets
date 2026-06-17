@@ -463,6 +463,7 @@ returns integer language sql immutable as $$
     when 'tree'      then 60
     when 'bush'      then 30
     when 'fence'     then 20
+    when 'fence_v'   then 20
     when 'bed'       then 80
     when 'bowl'      then 40
     when 'ball'      then 40
