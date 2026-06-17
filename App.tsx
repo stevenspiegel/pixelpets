@@ -25,6 +25,7 @@ import { PixedexScreen } from './src/components/PixedexScreen';
 import { BackgroundsScreen } from './src/components/BackgroundsScreen';
 import { SlotsScreen } from './src/components/SlotsScreen';
 import { BaseScreen } from './src/components/BaseScreen';
+import { BasePreview } from './src/dev/BasePreview';
 import { fetchBackgrounds } from './src/state/backgrounds';
 import { purchasesAvailable } from './src/state/purchases';
 
@@ -115,8 +116,19 @@ export default function App() {
     if (activePet) removePet(activePet.id);
   };
 
+  // Dev-only harness to preview the Base screen without Supabase/auth. Enabled
+  // by `?preview=base` (web) or EXPO_PUBLIC_PREVIEW=base, and only in dev builds.
+  const previewBase =
+    __DEV__ &&
+    (process.env.EXPO_PUBLIC_PREVIEW === 'base' ||
+      (Platform.OS === 'web' &&
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('preview') === 'base'));
+
   let screen: React.ReactNode;
-  if (!ready) {
+  if (previewBase) {
+    screen = <BasePreview />;
+  } else if (!ready) {
     screen = (
       <View style={styles.center}>
         <ActivityIndicator color="#fff" />
