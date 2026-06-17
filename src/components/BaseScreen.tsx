@@ -25,6 +25,7 @@ import {
   FUEL_FILL_MS,
   Placed,
   PlacedPet,
+  BaseState,
 } from '../state/base';
 import { CreatureSprite } from './CreatureSprite';
 
@@ -33,6 +34,10 @@ type Props = {
   tokens: number;
   onWalletChange: (tokens: number) => void;
   onExit: () => void;
+  // Dev harness only: seed the board from this state and skip the server
+  // fetch, so the base can be previewed without Supabase/auth (see
+  // src/dev/BasePreview.tsx). Editing still works in-memory; Save won't persist.
+  preview?: BaseState;
 };
 
 // Cell size for the rendered grid (square board, scaled to fit ~340px).
@@ -55,11 +60,11 @@ const DecorIcon: React.FC<{ id: string; size: number; bleed?: boolean }> = ({ id
   );
 };
 
-export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onExit }) => {
-  const [owned, setOwned] = useState<string[] | null>(null);
-  const [layout, setLayout] = useState<Placed[]>([]);
-  const [placedPets, setPlacedPets] = useState<PlacedPet[]>([]);
-  const [floor, setFloor] = useState('grass');
+export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onExit, preview }) => {
+  const [owned, setOwned] = useState<string[] | null>(preview ? preview.owned : null);
+  const [layout, setLayout] = useState<Placed[]>(preview ? preview.layout : []);
+  const [placedPets, setPlacedPets] = useState<PlacedPet[]>(preview ? preview.pets : []);
+  const [floor, setFloor] = useState(preview ? preview.floor : 'grass');
   const [editing, setEditing] = useState(false);
   // What a tile-tap will do: a decor id to place, 'erase', or 'pet:<id>' to
   // place a specific pet on the grid.
@@ -67,9 +72,10 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [fuel, setFuel] = useState<Record<string, number>>({});
+  const [fuel, setFuel] = useState<Record<string, number>>(preview ? preview.fuel : {});
 
   useEffect(() => {
+    if (preview) return; // dev harness seeds state directly; no server fetch
     let on = true;
     fetchBase().then((b) => {
       if (!on) return;
@@ -82,7 +88,7 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
     return () => {
       on = false;
     };
-  }, []);
+  }, [preview]);
 
   // Living (non-egg/dead) pets that mill about the base.
   const livePets = pets.filter((p) => p.stage !== 'egg' && p.stage !== 'dead');
