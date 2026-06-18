@@ -8,6 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "preview:base": "node scripts/preview-base.mjs",
+    "preview:base:native": "node scripts/preview-base-native.mjs",
     "typecheck": "tsc --noEmit",
     "sprite": "node scripts/make-sprite.mjs",
     "sprite:generate": "node scripts/generate-hf.mjs",
