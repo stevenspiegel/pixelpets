@@ -106,8 +106,8 @@ export default function App() {
 
   const ready = authLoaded && (!username || petLoaded);
 
-  const handleHatch = async (name: string) => {
-    const res = await hatch(name);
+  const handleHatch = async (name: string, useShards = false) => {
+    const res = await hatch(name, useShards);
     if (res.ok) setAddingNew(false); // stay on the hatch screen to show the error
     return res;
   };

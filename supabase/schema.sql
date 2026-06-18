@@ -1284,16 +1284,24 @@ revoke insert on public.pets from anon, authenticated;
 -- rarity, level (beyond the stage cap), and tokens can no longer be forged.
 
 -- Replace the step-1 hatch (which trusted a client-built pet) with one that
--- generates everything server-side. Returns { pet, tokens }.
+-- generates everything server-side. Returns { pet, tokens, egg_shards }.
+--
+-- p_use_shards funds the egg from the Egg Incubator's accrued egg_shards
+-- (Phase 2) instead of tokens: 150 shards = 1 free egg. The two-arg signature
+-- replaces the old one-arg form; `default false` keeps existing one-arg client
+-- calls (rpc('hatch_pet', { p_name })) resolving here. Must drop the one-arg
+-- form first, else `hatch_pet('x')` is ambiguous across the two overloads.
 drop function if exists public.hatch_pet(jsonb);
+drop function if exists public.hatch_pet(text);
 
-create or replace function public.hatch_pet(p_name text)
+create or replace function public.hatch_pet(p_name text, p_use_shards boolean default false)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
   me      uuid := auth.uid();
-  cost    integer := 150;        -- EGG_COST
+  cost    integer := 150;        -- EGG_COST / EGG_SHARDS_PER_EGG
   bal     integer;
+  shards  integer;
   owned   integer;
   nm      text := coalesce(nullif(btrim(p_name), ''), 'Pixel');
   key     text := lower(btrim(coalesce(p_name, '')));
@@ -1309,8 +1317,12 @@ declare
 begin
   select count(*) into owned from public.pets where owner = me;
   if owned >= public.market_max_pets() then raise exception 'Your collection is full'; end if;
-  select tokens into bal from public.profiles where id = me for update;
-  if bal < cost then raise exception 'Not enough tokens'; end if;
+  select tokens, egg_shards into bal, shards from public.profiles where id = me for update;
+  if p_use_shards then
+    if shards < cost then raise exception 'Not enough egg shards'; end if;
+  elsif bal < cost then
+    raise exception 'Not enough tokens';
+  end if;
 
   -- Easter-egg names force a species; otherwise roll rarity by weight
   -- (common 60 / uncommon 25 / rare 10 / epic 4 / legendary 1, total 100).
@@ -1348,10 +1360,16 @@ begin
     70, 70, 90, 80, 100, 0, now_ms, now_ms, false, 0, false, false
   ) returning * into pet_row;
 
-  update public.profiles set tokens = tokens - cost, active_pet_id = pid where id = me;
-  return jsonb_build_object('pet', to_jsonb(pet_row), 'tokens', bal - cost);
+  -- Charge from shards (tokens unchanged) or tokens, depending on the path.
+  if p_use_shards then
+    update public.profiles set egg_shards = egg_shards - cost, active_pet_id = pid where id = me;
+    return jsonb_build_object('pet', to_jsonb(pet_row), 'tokens', bal, 'egg_shards', shards - cost);
+  else
+    update public.profiles set tokens = tokens - cost, active_pet_id = pid where id = me;
+    return jsonb_build_object('pet', to_jsonb(pet_row), 'tokens', bal - cost, 'egg_shards', shards);
+  end if;
 end; $$;
-grant execute on function public.hatch_pet(text) to authenticated;
+grant execute on function public.hatch_pet(text, boolean) to authenticated;
 
 -- Ascend a dragon/unicorn at adulthood (one-way). ascended is otherwise locked.
 create or replace function public.ascend_pet(p_pet_id text)
