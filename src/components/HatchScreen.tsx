@@ -117,7 +117,14 @@ export const HatchScreen: React.FC<Props> = ({
             !busy && pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={styles.buttonText}>🥚 HATCH WITH SHARDS · FREE</Text>
+          <View style={styles.shardBtnRow}>
+            <Image
+              source={require('../../assets/egg-icon.png')}
+              style={styles.shardEgg}
+              resizeMode="contain"
+            />
+            <Text style={styles.buttonText}>HATCH WITH SHARDS · FREE</Text>
+          </View>
         </Pressable>
       )}
       {error && <Text style={styles.hint}>{error}</Text>}
@@ -249,6 +256,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 12,
     marginTop: 12,
+  },
+  shardBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  shardEgg: {
+    width: 22,
+    height: 22,
   },
   buttonPressed: {
     transform: [{ translateY: 2 }],
