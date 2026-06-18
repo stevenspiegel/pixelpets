@@ -815,7 +815,12 @@ begin
   end if;
   bal := bal - cost;
   blds := jsonb_set(blds, array[p_type, 'level'], to_jsonb(lvl + 1));
-  blds := jsonb_set(blds, array[p_type, 'collected_at'], to_jsonb(now_ms));
+  -- Accrual buildings (mine/incubator) had their reservoir banked above, so reset
+  -- the clock. Cooldown buildings (vault/feeder) keep their collected_at so an
+  -- in-progress cooldown carries into the new (usually shorter) level cooldown.
+  if p_type in ('mine', 'incubator') then
+    blds := jsonb_set(blds, array[p_type, 'collected_at'], to_jsonb(now_ms));
+  end if;
   update public.profiles set tokens = bal, egg_shards = shards, base_buildings = blds where id = me;
   return jsonb_build_object('tokens', bal, 'egg_shards', shards, 'base_buildings', blds);
 end; $$;
