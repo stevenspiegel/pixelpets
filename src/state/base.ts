@@ -5,8 +5,8 @@ import { supabase } from '../lib/supabase';
 // save_base_layout). The catalog here is the display source of truth; prices +
 // the valid-id set are mirrored in supabase/schema.sql (_decor_price) and the
 // grid size in _base_grid.
-export const BASE_GRID = 6; // 6x6
-export const BASE_MAX_ITEMS = 40;
+export const BASE_GRID = 12; // 12x12 (shown through a pan/zoom viewport)
+export const BASE_MAX_ITEMS = 120; // anti-abuse cap, generous on the 144-cell board
 
 export type DecorDef = {
   id: string;

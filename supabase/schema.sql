@@ -451,9 +451,9 @@ alter table public.profiles
 
 -- Grid + placement caps (mirror BASE_GRID / BASE_MAX_ITEMS in src/state/base.ts).
 create or replace function public._base_grid() returns integer
-  language sql immutable as $$ select 6 $$;        -- 6x6 grid
+  language sql immutable as $$ select 12 $$;       -- 12x12 grid (pan/zoom viewport)
 create or replace function public._base_max_items() returns integer
-  language sql immutable as $$ select 40 $$;       -- anti-abuse cap on placements
+  language sql immutable as $$ select 120 $$;      -- anti-abuse cap on placements
 
 -- Decoration catalog: valid ids + token price. Floors ('floor_*') are unlockable
 -- too and share this catalog. Keep in sync with BASE_DECOR in src/state/base.ts.
