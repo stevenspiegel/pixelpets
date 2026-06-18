@@ -62,13 +62,11 @@ const VIEWPORT = 336;           // visible window
 const MIN_SCALE = VIEWPORT / BOARD; // fit whole board in the window (~0.5)
 const MAX_SCALE = 1.5;
 
-// Renders a decoration's PNG art when present (assets/base/<id>.png), falling
-// back to the catalog emoji glyph until real art is dropped in.
+// Renders a decoration's PNG art (assets/base/<id>.png) or glyph fallback.
+// The bleed/tile path is a fallback for tiling items whose art is missing.
 const DecorIcon: React.FC<{ id: string; size: number; bleed?: boolean }> = ({ id, size, bleed }) => {
   const art = decorArt(id);
   if (art) {
-    // Tiling items (fences) fill the cell so neighbours touch; everything else
-    // is contained with a little breathing room.
     return <Image source={art} style={{ width: size, height: size }} resizeMode={bleed ? 'cover' : 'contain'} />;
   }
   return (
@@ -348,85 +346,85 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
           <View style={styles.viewport}>
             <GestureDetector gesture={boardGesture}>
               <Animated.View style={boardAnimStyle}>
-          {/* The board: floor + grid cells with decor; pets overlaid on top. */}
-          <View style={[styles.board, { backgroundColor: floorColor(floor) }]}>
-            {Array.from({ length: BASE_GRID }).map((_, y) => (
-              <View key={y} style={styles.row}>
-                {Array.from({ length: BASE_GRID }).map((_, x) => {
-                  const here = placedAt(x, y);
-                  const wall = here ? isWall(here.id) : false;
-                  const tile = here ? decorById(here.id)?.tile : false;
-                  const wallSrc = wall ? wallArt(wallMask(wallSet, x, y)) : undefined;
-                  return (
-                    <Pressable
-                      key={x}
-                      onPress={() => onCell(x, y)}
-                      style={[styles.cell, editing && styles.cellEditing]}
-                    >
-                      {wall && wallSrc ? (
-                        <Image source={wallSrc} style={{ width: CELL, height: CELL }} resizeMode="cover" />
-                      ) : (
-                        here && <DecorIcon id={here.id} size={tile ? CELL : CELL * 0.78} bleed={tile} />
-                      )}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            ))}
+                {/* The board: floor + grid cells with decor; pets overlaid on top. */}
+                <View style={[styles.board, { backgroundColor: floorColor(floor) }]}>
+                  {Array.from({ length: BASE_GRID }).map((_, y) => (
+                    <View key={y} style={styles.row}>
+                      {Array.from({ length: BASE_GRID }).map((_, x) => {
+                        const here = placedAt(x, y);
+                        const wall = here ? isWall(here.id) : false;
+                        const tile = here ? decorById(here.id)?.tile : false;
+                        const wallSrc = wall ? wallArt(wallMask(wallSet, x, y)) : undefined;
+                        return (
+                          <Pressable
+                            key={x}
+                            onPress={() => onCell(x, y)}
+                            style={[styles.cell, editing && styles.cellEditing]}
+                          >
+                            {wall && wallSrc ? (
+                              <Image source={wallSrc} style={{ width: CELL, height: CELL }} resizeMode="cover" />
+                            ) : (
+                              here && <DecorIcon id={here.id} size={tile ? CELL : CELL * 0.78} bleed={tile} />
+                            )}
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  ))}
 
-            {/* Pets placed on specific cells render anchored to their tile
-                (both view + edit). pointerEvents none so edit taps reach the
-                cell beneath. */}
-            {validPlaced.map((pp) => {
-              const pet = livePetById(pp.petId);
-              if (!pet) return null;
-              return (
-                <View
-                  key={pp.petId}
-                  pointerEvents="none"
-                  style={[styles.placedPet, { left: pp.x * CELL, top: pp.y * CELL }]}
-                >
-                  <CreatureSprite species={pet.species} stage={pet.stage} ascended={pet.ascended} size={CELL * 0.82} />
-                </View>
-              );
-            })}
+                  {/* Pets placed on specific cells render anchored to their tile
+                      (both view + edit). pointerEvents none so edit taps reach the
+                      cell beneath. */}
+                  {validPlaced.map((pp) => {
+                    const pet = livePetById(pp.petId);
+                    if (!pet) return null;
+                    return (
+                      <View
+                        key={pp.petId}
+                        pointerEvents="none"
+                        style={[styles.placedPet, { left: pp.x * CELL, top: pp.y * CELL }]}
+                      >
+                        <CreatureSprite species={pet.species} stage={pet.stage} ascended={pet.ascended} size={CELL * 0.82} />
+                      </View>
+                    );
+                  })}
 
-            {/* Buildings sit on their grid cell. In view mode a ready building is
-                tappable to collect and shows a badge; in edit mode taps fall
-                through to the cell (placement/erase handled by the shop). */}
-            {Object.entries(buildings).map(([id, st]) => {
-              const def = buildingById(id);
-              if (!def) return null;
-              const ready = !editing && isReady(def, st, now);
-              return (
-                <Pressable
-                  key={id}
-                  pointerEvents={editing ? 'none' : 'auto'}
-                  onPress={() => ready && onCollect(id)}
-                  style={[styles.placedPet, { left: st.x * CELL, top: st.y * CELL }]}
-                >
-                  <BuildingIcon id={id} size={CELL * 0.82} />
-                  {ready && (
-                    <View style={styles.readyBadge}>
-                      <Text style={styles.readyBadgeText}>{def.ready}</Text>
+                  {/* Buildings sit on their grid cell. In view mode a ready building is
+                      tappable to collect and shows a badge; in edit mode taps fall
+                      through to the cell (placement/erase handled by the shop). */}
+                  {Object.entries(buildings).map(([id, st]) => {
+                    const def = buildingById(id);
+                    if (!def) return null;
+                    const ready = !editing && isReady(def, st, now);
+                    return (
+                      <Pressable
+                        key={id}
+                        pointerEvents={editing ? 'none' : 'auto'}
+                        onPress={() => ready && onCollect(id)}
+                        style={[styles.placedPet, { left: st.x * CELL, top: st.y * CELL }]}
+                      >
+                        <BuildingIcon id={id} size={CELL * 0.82} />
+                        {ready && (
+                          <View style={styles.readyBadge}>
+                            <Text style={styles.readyBadgeText}>{def.ready}</Text>
+                          </View>
+                        )}
+                      </Pressable>
+                    );
+                  })}
+
+                  {/* Pets without a chosen spot wander in a simple wrapping row. View
+                      mode only — hidden while editing so they don't clutter. */}
+                  {!editing && unplacedPets.length > 0 && (
+                    <View style={styles.petLayer} pointerEvents="none">
+                      {unplacedPets.map((p) => (
+                        <View key={p.id} style={styles.petSlot}>
+                          <CreatureSprite species={p.species} stage={p.stage} ascended={p.ascended} size={44} />
+                        </View>
+                      ))}
                     </View>
                   )}
-                </Pressable>
-              );
-            })}
-
-            {/* Pets without a chosen spot wander in a simple wrapping row. View
-                mode only — hidden while editing so they don't clutter. */}
-            {!editing && unplacedPets.length > 0 && (
-              <View style={styles.petLayer} pointerEvents="none">
-                {unplacedPets.map((p) => (
-                  <View key={p.id} style={styles.petSlot}>
-                    <CreatureSprite species={p.species} stage={p.stage} ascended={p.ascended} size={44} />
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
+                </View>
               </Animated.View>
             </GestureDetector>
           </View>
