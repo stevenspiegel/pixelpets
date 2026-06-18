@@ -9,8 +9,7 @@ art can land incrementally — add a file, wire it, ship it.
 
 | file                      | item       | id        | footprint (default 1×1) |
 | ------------------------- | ---------- | --------- | ----------------------- |
-| `assets/base/fence.png`   | Fence ↔    | `fence`   | 1×1 (tiles)             |
-| `assets/base/fence_v.png` | Fence ↕    | `fence_v` | 1×1 (tiles)             |
+| `assets/base/wall_0.png` … `wall_15.png` | Wall (auto-tiling set, keyed by neighbour bitmask) | `fence` | 1×1 (tiles) |
 | `assets/base/rock.png`    | Rock       | `rock`    | 1×1                     |
 | `assets/base/bush.png`    | Bush       | `bush`    | 1×1                     |
 | `assets/base/bowl.png`    | Food Bowl  | `bowl`    | 1×1                     |
@@ -29,12 +28,10 @@ art can land incrementally — add a file, wire it, ship it.
 - Multi-cell items: size the canvas to the footprint (e.g. 256×128 for a 2×1)
   and set `w`/`h` on the `BASE_DECOR` entry to match.
 - Pixel-art style consistent with the creature sprites in `assets/sprites/`.
-- **Tiling items** (`tile: true` in `BASE_DECOR`, e.g. the fences) render
-  edge-to-edge (full cell) instead of inset, so copies in adjacent cells touch.
-  Their art must reach the exact tile edges to connect seamlessly. The fence
-  pieces are generated procedurally for pixel-exact edges —
-  `node scripts/gen-fence.mjs` rewrites `fence.png` (horizontal) and
-  `fence_v.png` (the same fence rotated 90° for vertical runs).
+- **Walls** (`tile: true`, id `fence`) auto-tile: the renderer computes a 4-bit
+  neighbour bitmask (N=1, E=2, S=4, W=8) per wall cell and draws the matching
+  `wall_<mask>.png`. The 16 sprites are generated procedurally for pixel-exact
+  seamless edges — `node scripts/gen-walls.mjs` rewrites `wall_0.png` … `wall_15.png`.
 
 ## Adding a new decoration
 

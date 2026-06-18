@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   Image,
 } from 'react-native';
 import { PetState } from '../types';
-import { decorArt, buildingArt } from '../base/images';
+import { decorArt, buildingArt, wallArt } from '../base/images';
 import {
   BASE_GRID,
   BASE_DECOR,
@@ -33,8 +33,15 @@ import {
   BUILDINGS,
   buildStructure,
   upgradeStructure,
+  isWall,
+  wallMask,
 } from '../state/base';
 import { CreatureSprite } from './CreatureSprite';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
 
 type Props = {
   pets: PetState[];
@@ -47,17 +54,19 @@ type Props = {
   preview?: BaseState;
 };
 
-// Cell size for the rendered grid (square board, scaled to fit ~340px).
-const BOARD = 336;
-const CELL = BOARD / BASE_GRID;
+// Cells stay full size; the board content is BASE_GRID*CELL and is shown through
+// a fixed VIEWPORT window the player pinch-zooms and pans.
+const CELL = 56;
+const BOARD = CELL * BASE_GRID; // 12 * 56 = 672 content px
+const VIEWPORT = 336;           // visible window
+const MIN_SCALE = VIEWPORT / BOARD; // fit whole board in the window (~0.5)
+const MAX_SCALE = 1.5;
 
-// Renders a decoration's PNG art when present (assets/base/<id>.png), falling
-// back to the catalog emoji glyph until real art is dropped in.
+// Renders a decoration's PNG art (assets/base/<id>.png) or glyph fallback.
+// The bleed/tile path is a fallback for tiling items whose art is missing.
 const DecorIcon: React.FC<{ id: string; size: number; bleed?: boolean }> = ({ id, size, bleed }) => {
   const art = decorArt(id);
   if (art) {
-    // Tiling items (fences) fill the cell so neighbours touch; everything else
-    // is contained with a little breathing room.
     return <Image source={art} style={{ width: size, height: size }} resizeMode={bleed ? 'cover' : 'contain'} />;
   }
   return (
@@ -114,6 +123,55 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
     const t = setInterval(() => setNow(Date.now()), 60000);
     return () => clearInterval(t);
   }, []);
+
+  // Pinch-zoom + pan transform for the board within the VIEWPORT window.
+  const scale = useSharedValue(MIN_SCALE);
+  const savedScale = useSharedValue(MIN_SCALE);
+  const tx = useSharedValue(0);
+  const ty = useSharedValue(0);
+  const savedTx = useSharedValue(0);
+  const savedTy = useSharedValue(0);
+
+  // Keep the board edges from panning inside the viewport at the current scale.
+  const clamp = (v: number, s: number) => {
+    'worklet';
+    const overflow = Math.max(0, (BOARD * s - VIEWPORT) / 2);
+    return Math.min(overflow, Math.max(-overflow, v));
+  };
+
+  const pan = Gesture.Pan()
+    .averageTouches(true)
+    .onUpdate((e) => {
+      tx.value = clamp(savedTx.value + e.translationX, scale.value);
+      ty.value = clamp(savedTy.value + e.translationY, scale.value);
+    })
+    .onEnd(() => {
+      savedTx.value = tx.value;
+      savedTy.value = ty.value;
+    });
+
+  const pinch = Gesture.Pinch()
+    .onUpdate((e) => {
+      const s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, savedScale.value * e.scale));
+      scale.value = s;
+      tx.value = clamp(tx.value, s);
+      ty.value = clamp(ty.value, s);
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+      savedTx.value = tx.value;
+      savedTy.value = ty.value;
+    });
+
+  const boardGesture = Gesture.Simultaneous(pan, pinch);
+
+  const boardAnimStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: tx.value },
+      { translateY: ty.value },
+      { scale: scale.value },
+    ],
+  }));
 
   // Living (non-egg/dead) pets that mill about the base.
   const livePets = pets.filter((p) => p.stage !== 'egg' && p.stage !== 'dead');
@@ -262,6 +320,12 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
   // Build a quick lookup for what's placed where.
   const placedAt = (x: number, y: number) => layout.find((p) => p.x === x && p.y === y);
 
+  // Coords of every wall cell, for O(1) neighbour lookup when auto-tiling.
+  const wallSet = useMemo(
+    () => new Set(layout.filter((p) => isWall(p.id)).map((p) => `${p.x},${p.y}`)),
+    [layout]
+  );
+
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       <View style={styles.topBar}>
@@ -277,78 +341,92 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
         <ActivityIndicator color="#fff" style={{ marginTop: 30 }} />
       ) : (
         <>
-          {/* The board: floor + grid cells with decor; pets overlaid on top. */}
-          <View style={[styles.board, { backgroundColor: floorColor(floor) }]}>
-            {Array.from({ length: BASE_GRID }).map((_, y) => (
-              <View key={y} style={styles.row}>
-                {Array.from({ length: BASE_GRID }).map((_, x) => {
-                  const here = placedAt(x, y);
-                  const tile = here ? decorById(here.id)?.tile : false;
-                  return (
-                    <Pressable
-                      key={x}
-                      onPress={() => onCell(x, y)}
-                      style={[styles.cell, editing && styles.cellEditing]}
-                    >
-                      {here && <DecorIcon id={here.id} size={tile ? CELL : CELL * 0.78} bleed={tile} />}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            ))}
+          {/* Pinch-zoom / pan viewport. The board content is BOARD px; the window
+              is VIEWPORT px and clips. Taps on cells hit-test through the transform. */}
+          <View style={styles.viewport}>
+            <GestureDetector gesture={boardGesture}>
+              <Animated.View style={boardAnimStyle}>
+                {/* The board: floor + grid cells with decor; pets overlaid on top. */}
+                <View style={[styles.board, { backgroundColor: floorColor(floor) }]}>
+                  {Array.from({ length: BASE_GRID }).map((_, y) => (
+                    <View key={y} style={styles.row}>
+                      {Array.from({ length: BASE_GRID }).map((_, x) => {
+                        const here = placedAt(x, y);
+                        const wall = here ? isWall(here.id) : false;
+                        const tile = here ? decorById(here.id)?.tile : false;
+                        const wallSrc = wall ? wallArt(wallMask(wallSet, x, y)) : undefined;
+                        return (
+                          <Pressable
+                            key={x}
+                            onPress={() => onCell(x, y)}
+                            style={[styles.cell, editing && styles.cellEditing]}
+                          >
+                            {wall && wallSrc ? (
+                              <Image source={wallSrc} style={{ width: CELL, height: CELL }} resizeMode="cover" />
+                            ) : (
+                              here && <DecorIcon id={here.id} size={tile ? CELL : CELL * 0.78} bleed={tile} />
+                            )}
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  ))}
 
-            {/* Pets placed on specific cells render anchored to their tile
-                (both view + edit). pointerEvents none so edit taps reach the
-                cell beneath. */}
-            {validPlaced.map((pp) => {
-              const pet = livePetById(pp.petId);
-              if (!pet) return null;
-              return (
-                <View
-                  key={pp.petId}
-                  pointerEvents="none"
-                  style={[styles.placedPet, { left: pp.x * CELL, top: pp.y * CELL }]}
-                >
-                  <CreatureSprite species={pet.species} stage={pet.stage} ascended={pet.ascended} size={CELL * 0.82} />
-                </View>
-              );
-            })}
+                  {/* Pets placed on specific cells render anchored to their tile
+                      (both view + edit). pointerEvents none so edit taps reach the
+                      cell beneath. */}
+                  {validPlaced.map((pp) => {
+                    const pet = livePetById(pp.petId);
+                    if (!pet) return null;
+                    return (
+                      <View
+                        key={pp.petId}
+                        pointerEvents="none"
+                        style={[styles.placedPet, { left: pp.x * CELL, top: pp.y * CELL }]}
+                      >
+                        <CreatureSprite species={pet.species} stage={pet.stage} ascended={pet.ascended} size={CELL * 0.82} />
+                      </View>
+                    );
+                  })}
 
-            {/* Buildings sit on their grid cell. In view mode a ready building is
-                tappable to collect and shows a badge; in edit mode taps fall
-                through to the cell (placement/erase handled by the shop). */}
-            {Object.entries(buildings).map(([id, st]) => {
-              const def = buildingById(id);
-              if (!def) return null;
-              const ready = !editing && isReady(def, st, now);
-              return (
-                <Pressable
-                  key={id}
-                  pointerEvents={editing ? 'none' : 'auto'}
-                  onPress={() => ready && onCollect(id)}
-                  style={[styles.placedPet, { left: st.x * CELL, top: st.y * CELL }]}
-                >
-                  <BuildingIcon id={id} size={CELL * 0.82} />
-                  {ready && (
-                    <View style={styles.readyBadge}>
-                      <Text style={styles.readyBadgeText}>{def.ready}</Text>
+                  {/* Buildings sit on their grid cell. In view mode a ready building is
+                      tappable to collect and shows a badge; in edit mode taps fall
+                      through to the cell (placement/erase handled by the shop). */}
+                  {Object.entries(buildings).map(([id, st]) => {
+                    const def = buildingById(id);
+                    if (!def) return null;
+                    const ready = !editing && isReady(def, st, now);
+                    return (
+                      <Pressable
+                        key={id}
+                        pointerEvents={editing ? 'none' : 'auto'}
+                        onPress={() => ready && onCollect(id)}
+                        style={[styles.placedPet, { left: st.x * CELL, top: st.y * CELL }]}
+                      >
+                        <BuildingIcon id={id} size={CELL * 0.82} />
+                        {ready && (
+                          <View style={styles.readyBadge}>
+                            <Text style={styles.readyBadgeText}>{def.ready}</Text>
+                          </View>
+                        )}
+                      </Pressable>
+                    );
+                  })}
+
+                  {/* Pets without a chosen spot wander in a simple wrapping row. View
+                      mode only — hidden while editing so they don't clutter. */}
+                  {!editing && unplacedPets.length > 0 && (
+                    <View style={styles.petLayer} pointerEvents="none">
+                      {unplacedPets.map((p) => (
+                        <View key={p.id} style={styles.petSlot}>
+                          <CreatureSprite species={p.species} stage={p.stage} ascended={p.ascended} size={44} />
+                        </View>
+                      ))}
                     </View>
                   )}
-                </Pressable>
-              );
-            })}
-
-            {/* Pets without a chosen spot wander in a simple wrapping row. View
-                mode only — hidden while editing so they don't clutter. */}
-            {!editing && unplacedPets.length > 0 && (
-              <View style={styles.petLayer} pointerEvents="none">
-                {unplacedPets.map((p) => (
-                  <View key={p.id} style={styles.petSlot}>
-                    <CreatureSprite species={p.species} stage={p.stage} ascended={p.ascended} size={44} />
-                  </View>
-                ))}
-              </View>
-            )}
+                </View>
+              </Animated.View>
+            </GestureDetector>
           </View>
 
           {!editing ? (
@@ -546,12 +624,19 @@ const styles = StyleSheet.create({
   exit: { color: '#ff8aa3', fontFamily: 'Courier', fontSize: 12, fontWeight: 'bold', letterSpacing: 2 },
   wallet: { color: '#ffd24d', fontFamily: 'Courier', fontSize: 14, marginBottom: 10 },
   error: { color: '#ff8aa3', fontFamily: 'Courier', fontSize: 12, textAlign: 'center', marginBottom: 8 },
-  board: {
-    width: BOARD,
-    height: BOARD,
+  viewport: {
+    width: VIEWPORT,
+    height: VIEWPORT,
     borderRadius: 10,
     borderWidth: 4,
     borderColor: '#0d0620',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  board: {
+    width: BOARD,
+    height: BOARD,
     overflow: 'hidden',
     position: 'relative',
   },

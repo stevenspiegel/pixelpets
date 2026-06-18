@@ -5,8 +5,8 @@ import { supabase } from '../lib/supabase';
 // save_base_layout). The catalog here is the display source of truth; prices +
 // the valid-id set are mirrored in supabase/schema.sql (_decor_price) and the
 // grid size in _base_grid.
-export const BASE_GRID = 6; // 6x6
-export const BASE_MAX_ITEMS = 40;
+export const BASE_GRID = 12; // 12x12 (shown through a pan/zoom viewport)
+export const BASE_MAX_ITEMS = 120; // anti-abuse cap, generous on the 144-cell board
 
 export type DecorDef = {
   id: string;
@@ -24,8 +24,7 @@ export type DecorDef = {
 
 // Decorations placeable on the grid.
 export const BASE_DECOR: DecorDef[] = [
-  { id: 'fence', name: 'Fence ↔', price: 20, glyph: '🪵', tile: true },
-  { id: 'fence_v', name: 'Fence ↕', price: 20, glyph: '🪵', tile: true },
+  { id: 'fence', name: 'Wall', price: 20, glyph: '🧱', tile: true },
   { id: 'rock', name: 'Rock', price: 25, glyph: '🪨' },
   { id: 'bush', name: 'Bush', price: 30, glyph: '🌿' },
   { id: 'bowl', name: 'Food Bowl', price: 40, glyph: '🥣' },
@@ -49,6 +48,22 @@ export const decorById = (id: string): DecorDef | undefined =>
   BASE_DECOR.find((d) => d.id === id);
 export const floorColor = (id: string): string =>
   BASE_FLOORS.find((f) => f.id === id)?.color ?? '#2e7d4f';
+
+// Walls auto-tile: a single catalog item (id 'fence') whose rendered sprite is
+// chosen from its neighbours. fence_v is a legacy id normalized to 'fence' on load.
+export const isWall = (id: string): boolean => id === 'fence';
+
+// 4-bit neighbour bitmask for the wall at (x,y): N=1, E=2, S=4, W=8. `walls` is a
+// set of "x,y" coord strings for every wall cell currently on the board.
+export const wallMask = (walls: Set<string>, x: number, y: number): number =>
+  (walls.has(`${x},${y - 1}`) ? 1 : 0) |
+  (walls.has(`${x + 1},${y}`) ? 2 : 0) |
+  (walls.has(`${x},${y + 1}`) ? 4 : 0) |
+  (walls.has(`${x - 1},${y}`) ? 8 : 0);
+
+// Migrate legacy vertical fences to the unified wall id so old bases auto-tile.
+export const normalizeLayout = (raw: Placed[]): Placed[] =>
+  raw.map((p) => (p.id === 'fence_v' ? { ...p, id: 'fence' } : p));
 
 // Care stats a functional decoration can slow the decay of. Mirrors
 // _decor_functional_stat in supabase/schema.sql.
@@ -163,6 +178,23 @@ export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 const cleanError = (msg: string): string =>
   msg.includes(':') ? msg.slice(msg.lastIndexOf(':') + 1).trim() : msg;
 
+// The server stores building state with snake_case keys ({ level, x, y,
+// collected_at } — see supabase/schema.sql), but BuildingState uses collectedAt.
+// Without this remap st.collectedAt is undefined, so accrued()/isReady() compute
+// NaN and the readiness badge never shows. Normalize at every read boundary.
+const normalizeBuildings = (raw: unknown): Record<string, BuildingState> => {
+  const out: Record<string, BuildingState> = {};
+  for (const [id, b] of Object.entries((raw as Record<string, any>) ?? {})) {
+    out[id] = {
+      level: Number(b.level),
+      x: Number(b.x),
+      y: Number(b.y),
+      collectedAt: Number(b.collected_at ?? b.collectedAt ?? 0),
+    };
+  }
+  return out;
+};
+
 export const fetchBase = async (): Promise<BaseState> => {
   const fallback: BaseState = { owned: [], layout: [], pets: [], floor: 'grass', fuel: {}, buildings: {}, eggShards: 0 };
   if (!supabase) return fallback;
@@ -182,11 +214,11 @@ export const fetchBase = async (): Promise<BaseState> => {
   const d = data as any;
   return {
     owned: (d.base_decor_owned as string[]) ?? [],
-    layout: (d.base_layout as Placed[]) ?? [],
+    layout: normalizeLayout((d.base_layout as Placed[]) ?? []),
     pets: (d.base_pets as PlacedPet[]) ?? [],
     floor: (d.base_floor as string) ?? 'grass',
     fuel: (d.base_fuel as Record<string, number>) ?? {},
-    buildings: (d.base_buildings as Record<string, BuildingState>) ?? {},
+    buildings: normalizeBuildings(d.base_buildings),
     eggShards: Number(d.egg_shards ?? 0),
   };
 };
@@ -245,7 +277,7 @@ export const buildStructure = async (
   if (error) return { ok: false, error: cleanError(error.message) };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const d = data as any;
-  return { ok: true, value: { tokens: Number(d.tokens), buildings: (d.base_buildings ?? {}) } };
+  return { ok: true, value: { tokens: Number(d.tokens), buildings: normalizeBuildings(d.base_buildings) } };
 };
 
 export const upgradeStructure = async (
@@ -256,7 +288,7 @@ export const upgradeStructure = async (
   if (error) return { ok: false, error: cleanError(error.message) };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const d = data as any;
-  return { ok: true, value: { tokens: Number(d.tokens), eggShards: Number(d.egg_shards), buildings: (d.base_buildings ?? {}) } };
+  return { ok: true, value: { tokens: Number(d.tokens), eggShards: Number(d.egg_shards), buildings: normalizeBuildings(d.base_buildings) } };
 };
 
 export const collectStructure = async (
@@ -269,6 +301,6 @@ export const collectStructure = async (
   const d = data as any;
   return { ok: true, value: {
     tokens: Number(d.tokens), eggShards: Number(d.egg_shards),
-    buildings: (d.base_buildings ?? {}), yield: Number(d.yield ?? 0),
+    buildings: normalizeBuildings(d.base_buildings), yield: Number(d.yield ?? 0),
   } };
 };

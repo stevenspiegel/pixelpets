@@ -13,15 +13,19 @@ import React from 'react';
 import { BaseScreen } from '../components/BaseScreen';
 import { BASE_DECOR, BaseState } from '../state/base';
 
-// A tidy showcase layout on the 6x6 grid: a full top row of horizontal fences
-// (they touch), the left column of vertical fences, and the rest scattered.
+// A tidy showcase layout on the 6x6 grid: a closed rectangular wall loop around
+// the top-left 6×6 region, plus scattered decorations (tree, bush, rock, etc.)
+// and the mine/vault buildings.
 const SAMPLE_BASE: BaseState = {
   owned: BASE_DECOR.map((d) => d.id),
   layout: [
+    // Closed wall loop: corners at (0,0)/(5,0)/(0,5)/(5,5), straights between.
     { id: 'fence', x: 0, y: 0 }, { id: 'fence', x: 1, y: 0 }, { id: 'fence', x: 2, y: 0 },
     { id: 'fence', x: 3, y: 0 }, { id: 'fence', x: 4, y: 0 }, { id: 'fence', x: 5, y: 0 },
-    { id: 'fence_v', x: 0, y: 1 }, { id: 'fence_v', x: 0, y: 2 }, { id: 'fence_v', x: 0, y: 3 },
-    { id: 'fence_v', x: 0, y: 4 }, { id: 'fence_v', x: 0, y: 5 },
+    { id: 'fence', x: 0, y: 5 }, { id: 'fence', x: 1, y: 5 }, { id: 'fence', x: 2, y: 5 },
+    { id: 'fence', x: 3, y: 5 }, { id: 'fence', x: 4, y: 5 }, { id: 'fence', x: 5, y: 5 },
+    { id: 'fence', x: 0, y: 1 }, { id: 'fence', x: 0, y: 2 }, { id: 'fence', x: 0, y: 3 }, { id: 'fence', x: 0, y: 4 },
+    { id: 'fence', x: 5, y: 1 }, { id: 'fence', x: 5, y: 2 }, { id: 'fence', x: 5, y: 3 }, { id: 'fence', x: 5, y: 4 },
     { id: 'tree', x: 2, y: 2 }, { id: 'bush', x: 3, y: 2 }, { id: 'rock', x: 1, y: 2 },
     { id: 'ball', x: 4, y: 2 }, { id: 'lamp', x: 5, y: 2 },
     { id: 'flowers', x: 2, y: 4 }, { id: 'bowl', x: 3, y: 4 }, { id: 'pond', x: 4, y: 4 },
