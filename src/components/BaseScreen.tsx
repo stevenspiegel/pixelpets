@@ -37,6 +37,13 @@ import {
   wallMask,
 } from '../state/base';
 import { CreatureSprite } from './CreatureSprite';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  runOnJS,
+} from 'react-native-reanimated';
 
 type Props = {
   pets: PetState[];
@@ -49,9 +56,13 @@ type Props = {
   preview?: BaseState;
 };
 
-// Cell size for the rendered grid (square board, scaled to fit ~340px).
-const BOARD = 336;
-const CELL = BOARD / BASE_GRID;
+// Cells stay full size; the board content is BASE_GRID*CELL and is shown through
+// a fixed VIEWPORT window the player pinch-zooms and pans.
+const CELL = 56;
+const BOARD = CELL * BASE_GRID; // 12 * 56 = 672 content px
+const VIEWPORT = 336;           // visible window
+const MIN_SCALE = VIEWPORT / BOARD; // fit whole board in the window (~0.5)
+const MAX_SCALE = 1.5;
 
 // Renders a decoration's PNG art when present (assets/base/<id>.png), falling
 // back to the catalog emoji glyph until real art is dropped in.
@@ -116,6 +127,55 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
     const t = setInterval(() => setNow(Date.now()), 60000);
     return () => clearInterval(t);
   }, []);
+
+  // Pinch-zoom + pan transform for the board within the VIEWPORT window.
+  const scale = useSharedValue(MIN_SCALE);
+  const savedScale = useSharedValue(MIN_SCALE);
+  const tx = useSharedValue(0);
+  const ty = useSharedValue(0);
+  const savedTx = useSharedValue(0);
+  const savedTy = useSharedValue(0);
+
+  // Keep the board edges from panning inside the viewport at the current scale.
+  const clamp = (v: number, s: number) => {
+    'worklet';
+    const overflow = Math.max(0, (BOARD * s - VIEWPORT) / 2);
+    return Math.min(overflow, Math.max(-overflow, v));
+  };
+
+  const pan = Gesture.Pan()
+    .averageTouches(true)
+    .onUpdate((e) => {
+      tx.value = clamp(savedTx.value + e.translationX, scale.value);
+      ty.value = clamp(savedTy.value + e.translationY, scale.value);
+    })
+    .onEnd(() => {
+      savedTx.value = tx.value;
+      savedTy.value = ty.value;
+    });
+
+  const pinch = Gesture.Pinch()
+    .onUpdate((e) => {
+      const s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, savedScale.value * e.scale));
+      scale.value = s;
+      tx.value = clamp(tx.value, s);
+      ty.value = clamp(ty.value, s);
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+      savedTx.value = tx.value;
+      savedTy.value = ty.value;
+    });
+
+  const boardGesture = Gesture.Simultaneous(pan, pinch);
+
+  const boardAnimStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: tx.value },
+      { translateY: ty.value },
+      { scale: scale.value },
+    ],
+  }));
 
   // Living (non-egg/dead) pets that mill about the base.
   const livePets = pets.filter((p) => p.stage !== 'egg' && p.stage !== 'dead');
@@ -285,6 +345,11 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
         <ActivityIndicator color="#fff" style={{ marginTop: 30 }} />
       ) : (
         <>
+          {/* Pinch-zoom / pan viewport. The board content is BOARD px; the window
+              is VIEWPORT px and clips. Taps on cells hit-test through the transform. */}
+          <View style={styles.viewport}>
+            <GestureDetector gesture={boardGesture}>
+              <Animated.View style={boardAnimStyle}>
           {/* The board: floor + grid cells with decor; pets overlaid on top. */}
           <View style={[styles.board, { backgroundColor: floorColor(floor) }]}>
             {Array.from({ length: BASE_GRID }).map((_, y) => (
@@ -363,6 +428,9 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
                 ))}
               </View>
             )}
+          </View>
+              </Animated.View>
+            </GestureDetector>
           </View>
 
           {!editing ? (
@@ -560,12 +628,19 @@ const styles = StyleSheet.create({
   exit: { color: '#ff8aa3', fontFamily: 'Courier', fontSize: 12, fontWeight: 'bold', letterSpacing: 2 },
   wallet: { color: '#ffd24d', fontFamily: 'Courier', fontSize: 14, marginBottom: 10 },
   error: { color: '#ff8aa3', fontFamily: 'Courier', fontSize: 12, textAlign: 'center', marginBottom: 8 },
-  board: {
-    width: BOARD,
-    height: BOARD,
+  viewport: {
+    width: VIEWPORT,
+    height: VIEWPORT,
     borderRadius: 10,
     borderWidth: 4,
     borderColor: '#0d0620',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  board: {
+    width: BOARD,
+    height: BOARD,
     overflow: 'hidden',
     position: 'relative',
   },

@@ -8,6 +8,7 @@ import {
   Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useAuth } from './src/state/useAuth';
 import { usePet, EGG_COST } from './src/state/usePet';
 import { isSupabaseConfigured } from './src/lib/supabase';
@@ -269,7 +270,7 @@ export default function App() {
   }
 
   return (
-    <View style={styles.root}>
+    <GestureHandlerRootView style={styles.root}>
       <View style={styles.grass}>
         <View style={styles.teeth}>
           {Array.from({ length: TEETH_COUNT }).map((_, i) => (
@@ -285,7 +286,7 @@ export default function App() {
         <SafeAreaView style={styles.safe}>{screen}</SafeAreaView>
         <StatusBar style="light" />
       </View>
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
