@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -265,8 +265,9 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
   const placedAt = (x: number, y: number) => layout.find((p) => p.x === x && p.y === y);
 
   // Coords of every wall cell, for O(1) neighbour lookup when auto-tiling.
-  const wallSet = new Set(
-    layout.filter((p) => isWall(p.id)).map((p) => `${p.x},${p.y}`)
+  const wallSet = useMemo(
+    () => new Set(layout.filter((p) => isWall(p.id)).map((p) => `${p.x},${p.y}`)),
+    [layout]
   );
 
   return (
