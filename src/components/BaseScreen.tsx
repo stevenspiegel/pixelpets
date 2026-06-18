@@ -9,7 +9,7 @@ import {
   Image,
 } from 'react-native';
 import { PetState } from '../types';
-import { decorArt, buildingArt } from '../base/images';
+import { decorArt, buildingArt, wallArt } from '../base/images';
 import {
   BASE_GRID,
   BASE_DECOR,
@@ -33,6 +33,8 @@ import {
   BUILDINGS,
   buildStructure,
   upgradeStructure,
+  isWall,
+  wallMask,
 } from '../state/base';
 import { CreatureSprite } from './CreatureSprite';
 
@@ -262,6 +264,11 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
   // Build a quick lookup for what's placed where.
   const placedAt = (x: number, y: number) => layout.find((p) => p.x === x && p.y === y);
 
+  // Coords of every wall cell, for O(1) neighbour lookup when auto-tiling.
+  const wallSet = new Set(
+    layout.filter((p) => isWall(p.id)).map((p) => `${p.x},${p.y}`)
+  );
+
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       <View style={styles.topBar}>
@@ -283,14 +290,20 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
               <View key={y} style={styles.row}>
                 {Array.from({ length: BASE_GRID }).map((_, x) => {
                   const here = placedAt(x, y);
+                  const wall = here ? isWall(here.id) : false;
                   const tile = here ? decorById(here.id)?.tile : false;
+                  const wallSrc = wall ? wallArt(wallMask(wallSet, x, y)) : undefined;
                   return (
                     <Pressable
                       key={x}
                       onPress={() => onCell(x, y)}
                       style={[styles.cell, editing && styles.cellEditing]}
                     >
-                      {here && <DecorIcon id={here.id} size={tile ? CELL : CELL * 0.78} bleed={tile} />}
+                      {wall && wallSrc ? (
+                        <Image source={wallSrc} style={{ width: CELL, height: CELL }} resizeMode="cover" />
+                      ) : (
+                        here && <DecorIcon id={here.id} size={tile ? CELL : CELL * 0.78} bleed={tile} />
+                      )}
                     </Pressable>
                   );
                 })}

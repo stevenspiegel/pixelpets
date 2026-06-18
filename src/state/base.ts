@@ -24,8 +24,7 @@ export type DecorDef = {
 
 // Decorations placeable on the grid.
 export const BASE_DECOR: DecorDef[] = [
-  { id: 'fence', name: 'Fence ↔', price: 20, glyph: '🪵', tile: true },
-  { id: 'fence_v', name: 'Fence ↕', price: 20, glyph: '🪵', tile: true },
+  { id: 'fence', name: 'Wall', price: 20, glyph: '🧱', tile: true },
   { id: 'rock', name: 'Rock', price: 25, glyph: '🪨' },
   { id: 'bush', name: 'Bush', price: 30, glyph: '🌿' },
   { id: 'bowl', name: 'Food Bowl', price: 40, glyph: '🥣' },
@@ -49,6 +48,22 @@ export const decorById = (id: string): DecorDef | undefined =>
   BASE_DECOR.find((d) => d.id === id);
 export const floorColor = (id: string): string =>
   BASE_FLOORS.find((f) => f.id === id)?.color ?? '#2e7d4f';
+
+// Walls auto-tile: a single catalog item (id 'fence') whose rendered sprite is
+// chosen from its neighbours. fence_v is a legacy id normalized to 'fence' on load.
+export const isWall = (id: string): boolean => id === 'fence';
+
+// 4-bit neighbour bitmask for the wall at (x,y): N=1, E=2, S=4, W=8. `walls` is a
+// set of "x,y" coord strings for every wall cell currently on the board.
+export const wallMask = (walls: Set<string>, x: number, y: number): number =>
+  (walls.has(`${x},${y - 1}`) ? 1 : 0) |
+  (walls.has(`${x + 1},${y}`) ? 2 : 0) |
+  (walls.has(`${x},${y + 1}`) ? 4 : 0) |
+  (walls.has(`${x - 1},${y}`) ? 8 : 0);
+
+// Migrate legacy vertical fences to the unified wall id so old bases auto-tile.
+export const normalizeLayout = (raw: Placed[]): Placed[] =>
+  raw.map((p) => (p.id === 'fence_v' ? { ...p, id: 'fence' } : p));
 
 // Care stats a functional decoration can slow the decay of. Mirrors
 // _decor_functional_stat in supabase/schema.sql.
@@ -199,7 +214,7 @@ export const fetchBase = async (): Promise<BaseState> => {
   const d = data as any;
   return {
     owned: (d.base_decor_owned as string[]) ?? [],
-    layout: (d.base_layout as Placed[]) ?? [],
+    layout: normalizeLayout((d.base_layout as Placed[]) ?? []),
     pets: (d.base_pets as PlacedPet[]) ?? [],
     floor: (d.base_floor as string) ?? 'grass',
     fuel: (d.base_fuel as Record<string, number>) ?? {},
