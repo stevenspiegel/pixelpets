@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Image, StyleSheet, Animated, Easing } from 'react-native';
 import { PetState } from '../types';
 import { STAGE_BABY_AT, effectiveRarity } from '../state/usePet';
@@ -16,6 +16,11 @@ const SPRITE_SIZE_BY_STAGE: Record<string, number> = {
   teen: 160,
   adult: 168,
 };
+
+// Length of the egg-hatch GIF (assets/egg-hatch.gif): 14 frames × 130ms. We play
+// it once at the egg→baby crossing, then reveal the pet — so the reveal is gated
+// for exactly one loop of the animation.
+const HATCH_ANIM_MS = 1820;
 
 const stageEmoji = (pet: PetState): string => {
   if (pet.stage === 'dead') return '👻';
@@ -56,10 +61,27 @@ export const Pet: React.FC<Props> = ({ pet }) => {
   const bob = useRef(new Animated.Value(0)).current;
   const sparkle = useRef(new Animated.Value(0)).current;
 
+  // Play the hatch GIF once when the egg actually hatches (egg→baby), then
+  // reveal the pet. We only trigger on the live transition — a Pet that mounts
+  // already past the egg stage (e.g. after an app reload) skips straight to the
+  // reveal, no replay.
+  const prevStage = useRef(pet.stage);
+  const [hatching, setHatching] = useState(false);
+  useEffect(() => {
+    const was = prevStage.current;
+    prevStage.current = pet.stage;
+    if (was === 'egg' && pet.stage !== 'egg' && pet.stage !== 'dead') {
+      setHatching(true);
+      const t = setTimeout(() => setHatching(false), HATCH_ANIM_MS);
+      return () => clearTimeout(t);
+    }
+  }, [pet.stage]);
+
   const rarity = effectiveRarity(pet);
   const showSparkles =
     pet.stage !== 'egg' &&
     pet.stage !== 'dead' &&
+    !hatching &&
     (rarity === 'epic' || rarity === 'legendary' || rarity === 'mythical');
 
   useEffect(() => {
@@ -168,6 +190,16 @@ export const Pet: React.FC<Props> = ({ pet }) => {
             </Text>
           </View>
         </View>
+      ) : hatching ? (
+        // One-shot hatch animation, played between the timer finishing and the
+        // pet being revealed (its length is HATCH_ANIM_MS).
+        <View style={styles.eggBox}>
+          <Image
+            source={require('../../assets/egg-hatch.gif')}
+            style={styles.egg}
+            resizeMode="contain"
+          />
+        </View>
       ) : imageSource ? (
         <Animated.View style={{ transform: [{ translateY }] }}>
           <Image
@@ -198,7 +230,7 @@ export const Pet: React.FC<Props> = ({ pet }) => {
           {stageEmoji(pet)}
         </Animated.Text>
       )}
-      {mood && <Text style={styles.mood}>{mood}</Text>}
+      {!hatching && mood && <Text style={styles.mood}>{mood}</Text>}
       {Math.floor(pet.poops) > 0 && pet.stage !== 'egg' && pet.stage !== 'dead' && (
         <View style={styles.poopRow}>
           {Array.from({ length: Math.min(Math.floor(pet.poops), 4) }).map((_, i) => (
