@@ -9,7 +9,7 @@ import {
   Image,
 } from 'react-native';
 import { PetState } from '../types';
-import { decorArt } from '../base/images';
+import { decorArt, buildingArt } from '../base/images';
 import {
   BASE_GRID,
   BASE_DECOR,
@@ -26,6 +26,10 @@ import {
   Placed,
   PlacedPet,
   BaseState,
+  buildingById,
+  isReady,
+  collectStructure,
+  BuildingState,
 } from '../state/base';
 import { CreatureSprite } from './CreatureSprite';
 
@@ -60,6 +64,13 @@ const DecorIcon: React.FC<{ id: string; size: number; bleed?: boolean }> = ({ id
   );
 };
 
+// Renders a building's PNG art (assets/base/<id>.png), falling back to its glyph.
+const BuildingIcon: React.FC<{ id: string; size: number }> = ({ id, size }) => {
+  const art = buildingArt(id);
+  if (art) return <Image source={art} style={{ width: size, height: size }} resizeMode="contain" />;
+  return <Text style={{ fontSize: size * 0.78, lineHeight: size }}>{buildingById(id)?.glyph ?? '?'}</Text>;
+};
+
 export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onExit, preview }) => {
   const [owned, setOwned] = useState<string[] | null>(preview ? preview.owned : null);
   const [layout, setLayout] = useState<Placed[]>(preview ? preview.layout : []);
@@ -73,6 +84,9 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [fuel, setFuel] = useState<Record<string, number>>(preview ? preview.fuel : {});
+  const [buildings, setBuildings] = useState<Record<string, BuildingState>>(preview ? preview.buildings : {});
+  const [eggShards, setEggShards] = useState<number>(preview ? preview.eggShards : 0);
+  const [now, setNow] = useState<number>(() => Date.now());
 
   useEffect(() => {
     if (preview) return; // dev harness seeds state directly; no server fetch
@@ -84,11 +98,19 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
       setPlacedPets(b.pets);
       setFloor(b.floor);
       setFuel(b.fuel);
+      setBuildings(b.buildings);
+      setEggShards(b.eggShards);
     });
     return () => {
       on = false;
     };
   }, [preview]);
+
+  // Re-render once a minute so readiness badges update without a manual refresh.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
 
   // Living (non-egg/dead) pets that mill about the base.
   const livePets = pets.filter((p) => p.stage !== 'egg' && p.stage !== 'dead');
@@ -166,6 +188,19 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
     onWalletChange(res.value.tokens);
   };
 
+  const onCollect = async (id: string) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await collectStructure(id as any);
+    setBusy(false);
+    if (!res.ok) { setError(res.error); return; }
+    setBuildings(res.value.buildings);
+    setEggShards(res.value.eggShards);
+    onWalletChange(res.value.tokens);
+    setNow(Date.now());
+  };
+
   const onSave = async () => {
     if (busy) return;
     setBusy(true);
@@ -235,6 +270,30 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
                 >
                   <CreatureSprite species={pet.species} stage={pet.stage} ascended={pet.ascended} size={CELL * 0.82} />
                 </View>
+              );
+            })}
+
+            {/* Buildings sit on their grid cell. In view mode a ready building is
+                tappable to collect and shows a badge; in edit mode taps fall
+                through to the cell (placement/erase handled by the shop). */}
+            {Object.entries(buildings).map(([id, st]) => {
+              const def = buildingById(id);
+              if (!def) return null;
+              const ready = !editing && isReady(def, st, now);
+              return (
+                <Pressable
+                  key={id}
+                  pointerEvents={editing ? 'none' : 'auto'}
+                  onPress={() => ready && onCollect(id)}
+                  style={[styles.placedPet, { left: st.x * CELL, top: st.y * CELL }]}
+                >
+                  <BuildingIcon id={id} size={CELL * 0.82} />
+                  {ready && (
+                    <View style={styles.readyBadge}>
+                      <Text style={styles.readyBadgeText}>{def.ready}</Text>
+                    </View>
+                  )}
+                </Pressable>
               );
             })}
 
@@ -498,4 +557,15 @@ const styles = StyleSheet.create({
   },
   refillBtnDisabled: { opacity: 0.5 },
   refillBtnText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  readyBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: '#ffd24d',
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    minWidth: 16,
+    alignItems: 'center',
+  },
+  readyBadgeText: { fontSize: 11 },
 });
