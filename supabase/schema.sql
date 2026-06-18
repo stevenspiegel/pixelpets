@@ -1283,6 +1283,37 @@ revoke insert on public.pets from anon, authenticated;
 -- and trusted from the client, so growth can be fast-forwarded — but stats,
 -- rarity, level (beyond the stage cap), and tokens can no longer be forged.
 
+-- ── Species roster (single source of truth) ───────────────────────────────────
+-- The hatchable species per rarity tier. hatch_pet rolls from these and
+-- start_battle draws wild opponents from the full set, so a species removed
+-- here disappears from both hatching AND battles at once — no more stale
+-- hardcoded lists drifting (e.g. rhino/raccoon lingering as wild opponents
+-- after being dropped from the hatch pool). Mirrors SPECIES_BY_RARITY in
+-- src/state/usePet.ts — keep the two in sync.
+create or replace function public._species_pool(p_rarity text) returns text[]
+  language sql immutable as $$
+  select case p_rarity
+    when 'common'    then array['🐕','🐈','🐇','🐢']
+    when 'uncommon'  then array['🦊','🐍','🦎','🦇','🦔','🐧']
+    when 'rare'      then array['🦥','🦉','🦅','🦘','🦫','🦒']
+    when 'epic'      then array['🐅','🐘','🐊','🦈','🐙','🦖']
+    when 'legendary' then array['🐉','🦄','🧜']
+    else array[]::text[] end;
+$$;
+
+-- The full hatchable roster (all tiers), used as the wild-opponent pool.
+create or replace function public._hatchable_species() returns text[]
+  language sql immutable as $$
+  select public._species_pool('common')
+       || public._species_pool('uncommon')
+       || public._species_pool('rare')
+       || public._species_pool('epic')
+       || public._species_pool('legendary');
+$$;
+
+revoke execute on function public._species_pool(text)  from public, anon, authenticated;
+revoke execute on function public._hatchable_species() from public, anon, authenticated;
+
 -- Replace the step-1 hatch (which trusted a client-built pet) with one that
 -- generates everything server-side. Returns { pet, tokens, egg_shards }.
 --
@@ -1332,12 +1363,13 @@ begin
     rarity := 'legendary'; species := '🦄';
   else
     r := random() * 100;
-    if    r < 60 then rarity := 'common';    pool := array['🐕','🐈','🐇','🐢'];
-    elsif r < 85 then rarity := 'uncommon';  pool := array['🦊','🐍','🦎','🦇','🦔','🐧'];
-    elsif r < 95 then rarity := 'rare';      pool := array['🦥','🦉','🦅','🦘','🦫','🦒'];
-    elsif r < 99 then rarity := 'epic';      pool := array['🐅','🐘','🐊','🦈','🐙','🦖'];
-    else              rarity := 'legendary'; pool := array['🐉','🦄','🧜'];
+    if    r < 60 then rarity := 'common';
+    elsif r < 85 then rarity := 'uncommon';
+    elsif r < 95 then rarity := 'rare';
+    elsif r < 99 then rarity := 'epic';
+    else              rarity := 'legendary';
     end if;
+    pool := public._species_pool(rarity);
     species := pool[1 + floor(random() * array_length(pool, 1))::int];
   end if;
 
@@ -1604,7 +1636,10 @@ declare
   bid uuid;
   mult jsonb;
   adjs text[] := array['Wild','Feral','Rival','Rogue','Fierce','Ancient'];
-  opps text[] := array['🦊','🐅','🦈','🐉','🦉','🐍','🦫','🦒','🐊','🦝','🦏','🐘'];
+  -- Wild opponents are drawn from the full hatchable roster (single source of
+  -- truth, _hatchable_species), so removed species never reappear as opponents
+  -- and the pool stays in sync with what players can actually hatch.
+  opps text[] := public._hatchable_species();
 begin
   select * into pet from public.pets where id = p_pet_id and owner = me;
   if pet.id is null then raise exception 'That pet is not yours'; end if;
