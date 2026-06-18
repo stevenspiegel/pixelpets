@@ -24,9 +24,8 @@ const HATCH_ANIM_MS = 1820;
 
 const stageEmoji = (pet: PetState): string => {
   if (pet.stage === 'dead') return '👻';
-  if (pet.stage === 'egg') return '🥚';
-  // baby, child, teen, adult all show the actual species — sized
-  // differently per stage so the pet still visibly grows up.
+  // egg renders egg.gif in the tile above; baby/child/teen/adult show the actual
+  // species — sized differently per stage so the pet still visibly grows up.
   return pet.species;
 };
 

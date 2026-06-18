@@ -24,8 +24,10 @@ const RARITY_COLOR: Record<Rarity, string> = {
   mythical: '#ff7af0',
 };
 
+// Fallback glyph only — egg and dead stages render their own art (egg.gif /
+// ghost.png) in the tile above, so this is reached only for a living pet with
+// no sprite.
 const tileEmoji = (pet: PetState): string => {
-  if (pet.stage === 'egg') return '🥚';
   if (pet.stage === 'dead') return '👻';
   return pet.species;
 };

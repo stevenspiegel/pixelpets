@@ -481,7 +481,14 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
                   built → show level + Upgrade. */}
               <Text style={styles.shopHeader}>BUILDINGS</Text>
               {eggShards > 0 && (
-                <Text style={styles.fuelText}>🥚 shards: {eggShards}/150 toward a free egg</Text>
+                <View style={styles.shardsMeter}>
+                  <Image
+                    source={require('../../assets/egg-icon.png')}
+                    style={styles.shardsEgg}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.fuelText}>shards: {eggShards}/150 toward a free egg</Text>
+                </View>
               )}
               <View style={styles.shopGrid}>
                 {BUILDINGS.map((b) => {
@@ -633,6 +640,8 @@ const styles = StyleSheet.create({
   shopName: { color: '#fff', fontFamily: 'Courier', fontSize: 12, marginTop: 2 },
   shopPrice: { color: '#ffd24d', fontFamily: 'Courier', fontSize: 11, fontWeight: 'bold', marginTop: 2 },
   fuelText: { color: '#cfe3ef', fontSize: 10, marginTop: 2 },
+  shardsMeter: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' },
+  shardsEgg: { width: 14, height: 14 },
   refillBtn: {
     backgroundColor: '#3a7d4f',
     borderRadius: 6,
