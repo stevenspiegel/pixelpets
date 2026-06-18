@@ -9,7 +9,7 @@ import {
   Image,
 } from 'react-native';
 import { PetState } from '../types';
-import { decorArt } from '../base/images';
+import { decorArt, buildingArt } from '../base/images';
 import {
   BASE_GRID,
   BASE_DECOR,
@@ -26,6 +26,13 @@ import {
   Placed,
   PlacedPet,
   BaseState,
+  buildingById,
+  isReady,
+  collectStructure,
+  BuildingState,
+  BUILDINGS,
+  buildStructure,
+  upgradeStructure,
 } from '../state/base';
 import { CreatureSprite } from './CreatureSprite';
 
@@ -60,6 +67,13 @@ const DecorIcon: React.FC<{ id: string; size: number; bleed?: boolean }> = ({ id
   );
 };
 
+// Renders a building's PNG art (assets/base/<id>.png), falling back to its glyph.
+const BuildingIcon: React.FC<{ id: string; size: number }> = ({ id, size }) => {
+  const art = buildingArt(id);
+  if (art) return <Image source={art} style={{ width: size, height: size }} resizeMode="contain" />;
+  return <Text style={{ fontSize: size * 0.78, lineHeight: size }}>{buildingById(id)?.glyph ?? '?'}</Text>;
+};
+
 export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onExit, preview }) => {
   const [owned, setOwned] = useState<string[] | null>(preview ? preview.owned : null);
   const [layout, setLayout] = useState<Placed[]>(preview ? preview.layout : []);
@@ -73,6 +87,9 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [fuel, setFuel] = useState<Record<string, number>>(preview ? preview.fuel : {});
+  const [buildings, setBuildings] = useState<Record<string, BuildingState>>(preview ? preview.buildings : {});
+  const [eggShards, setEggShards] = useState<number>(preview ? preview.eggShards : 0);
+  const [now, setNow] = useState<number>(() => Date.now());
 
   useEffect(() => {
     if (preview) return; // dev harness seeds state directly; no server fetch
@@ -84,11 +101,19 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
       setPlacedPets(b.pets);
       setFloor(b.floor);
       setFuel(b.fuel);
+      setBuildings(b.buildings);
+      setEggShards(b.eggShards);
     });
     return () => {
       on = false;
     };
   }, [preview]);
+
+  // Re-render once a minute so readiness badges update without a manual refresh.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
 
   // Living (non-egg/dead) pets that mill about the base.
   const livePets = pets.filter((p) => p.stage !== 'egg' && p.stage !== 'dead');
@@ -118,6 +143,26 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
         return [...without, { petId, x, y }];
       });
       setDirty(true);
+      return;
+    }
+    if (selected.startsWith('build:')) {
+      const type = selected.slice(6);
+      if (busy) return;
+      // Reject locally if the cell is taken (server also enforces this).
+      if (layout.some((p) => p.x === x && p.y === y) ||
+          Object.values(buildings).some((b) => b.x === x && b.y === y)) {
+        setError('Cell occupied');
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      buildStructure(type as any, x, y).then((res) => {
+        setBusy(false);
+        if (!res.ok) { setError(res.error); return; }
+        setBuildings(res.value.buildings);
+        onWalletChange(res.value.tokens);
+        setSelected(null);
+      });
       return;
     }
     setLayout((l) => {
@@ -163,6 +208,37 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
       return;
     }
     setFuel(res.value.fuel);
+    onWalletChange(res.value.tokens);
+  };
+
+  const onCollect = async (id: string) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await collectStructure(id as any);
+    setBusy(false);
+    if (!res.ok) { setError(res.error); return; }
+    setBuildings(res.value.buildings);
+    setEggShards(res.value.eggShards);
+    onWalletChange(res.value.tokens);
+    setNow(Date.now());
+  };
+
+  const onBuildSelect = (id: string) => {
+    // Selecting an unbuilt building arms placement; the actual build happens on
+    // the first tile tap (see onCell). Owned buildings can't be re-placed.
+    setSelected(`build:${id}`);
+  };
+
+  const onUpgrade = async (id: string) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await upgradeStructure(id as any);
+    setBusy(false);
+    if (!res.ok) { setError(res.error); return; }
+    setBuildings(res.value.buildings);
+    setEggShards(res.value.eggShards);
     onWalletChange(res.value.tokens);
   };
 
@@ -238,6 +314,30 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
               );
             })}
 
+            {/* Buildings sit on their grid cell. In view mode a ready building is
+                tappable to collect and shows a badge; in edit mode taps fall
+                through to the cell (placement/erase handled by the shop). */}
+            {Object.entries(buildings).map(([id, st]) => {
+              const def = buildingById(id);
+              if (!def) return null;
+              const ready = !editing && isReady(def, st, now);
+              return (
+                <Pressable
+                  key={id}
+                  pointerEvents={editing ? 'none' : 'auto'}
+                  onPress={() => ready && onCollect(id)}
+                  style={[styles.placedPet, { left: st.x * CELL, top: st.y * CELL }]}
+                >
+                  <BuildingIcon id={id} size={CELL * 0.82} />
+                  {ready && (
+                    <View style={styles.readyBadge}>
+                      <Text style={styles.readyBadgeText}>{def.ready}</Text>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+
             {/* Pets without a chosen spot wander in a simple wrapping row. View
                 mode only — hidden while editing so they don't clutter. */}
             {!editing && unplacedPets.length > 0 && (
@@ -276,7 +376,9 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
                 </Pressable>
               </View>
               <Text style={styles.hint}>
-                {selected === 'erase'
+                {selected?.startsWith('build:')
+                  ? 'Tap an empty tile to build it here.'
+                  : selected === 'erase'
                   ? 'Tap a tile to clear its decoration or pet.'
                   : selected?.startsWith('pet:')
                   ? 'Tap a tile to move this pet there.'
@@ -368,6 +470,48 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
                           >
                             <Text style={styles.refillBtnText}>Refill ({REFILL_COST})</Text>
                           </Pressable>
+                        </>
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {/* Buildings: one-of-each, upgradeable. Unbuilt → arm placement;
+                  built → show level + Upgrade. */}
+              <Text style={styles.shopHeader}>BUILDINGS</Text>
+              {eggShards > 0 && (
+                <Text style={styles.fuelText}>🥚 shards: {eggShards}/150 toward a free egg</Text>
+              )}
+              <View style={styles.shopGrid}>
+                {BUILDINGS.map((b) => {
+                  const st = buildings[b.id];
+                  const active = selected === `build:${b.id}`;
+                  const upCost = st ? b.upgradeCost(st.level) : null;
+                  return (
+                    <Pressable
+                      key={b.id}
+                      onPress={() => (st ? undefined : onBuildSelect(b.id))}
+                      style={[styles.shopCard, active && styles.shopCardActive]}
+                    >
+                      <BuildingIcon id={b.id} size={34} />
+                      <Text style={styles.shopName} numberOfLines={1}>{b.name}</Text>
+                      {!st ? (
+                        <Text style={styles.shopPrice}>{active ? 'TAP TILE' : `✦ ${b.buildCost}`}</Text>
+                      ) : (
+                        <>
+                          <Text style={styles.shopPrice}>Lv {st.level}</Text>
+                          {upCost != null ? (
+                            <Pressable
+                              onPress={() => onUpgrade(b.id)}
+                              disabled={busy || tokens < upCost}
+                              style={[styles.refillBtn, (busy || tokens < upCost) && styles.refillBtnDisabled]}
+                            >
+                              <Text style={styles.refillBtnText}>Upgrade ({upCost})</Text>
+                            </Pressable>
+                          ) : (
+                            <Text style={styles.fuelText}>MAX</Text>
+                          )}
                         </>
                       )}
                     </Pressable>
@@ -498,4 +642,15 @@ const styles = StyleSheet.create({
   },
   refillBtnDisabled: { opacity: 0.5 },
   refillBtnText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  readyBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: '#ffd24d',
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    minWidth: 16,
+    alignItems: 'center',
+  },
+  readyBadgeText: { fontSize: 11 },
 });

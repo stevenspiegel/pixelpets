@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,11 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { fetchBase, EGG_SHARDS_PER_EGG } from '../state/base';
 
 type Props = {
   username: string;
-  onHatch: (name: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onHatch: (name: string, useShards?: boolean) => Promise<{ ok: true } | { ok: false; error: string }>;
   onLogOut: () => void;
   tokens: number;
   cost: number;
@@ -32,13 +33,27 @@ export const HatchScreen: React.FC<Props> = ({
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Egg shards accrue from the Egg Incubator building (Phase 2); 150 = a free
+  // egg. Read once on mount so we can offer a shard-funded hatch when enough
+  // have built up. Lives in base state, not the wallet, so we fetch it here.
+  const [eggShards, setEggShards] = useState(0);
+  useEffect(() => {
+    let on = true;
+    fetchBase()
+      .then((b) => on && setEggShards(b.eggShards))
+      .catch(() => {});
+    return () => {
+      on = false;
+    };
+  }, []);
   const affordable = tokens >= cost;
+  const canUseShards = eggShards >= EGG_SHARDS_PER_EGG;
 
-  const submit = async () => {
-    if (busy || !affordable) return;
+  const submit = async (useShards = false) => {
+    if (busy || (useShards ? !canUseShards : !affordable)) return;
     setBusy(true);
     setError(null);
-    const res = await onHatch(name.trim() || 'Pixel');
+    const res = await onHatch(name.trim() || 'Pixel', useShards);
     setBusy(false);
     if (!res.ok) setError(res.error);
   };
@@ -80,7 +95,7 @@ export const HatchScreen: React.FC<Props> = ({
         autoCapitalize="words"
       />
       <Pressable
-        onPress={submit}
+        onPress={() => submit(false)}
         disabled={!affordable || busy}
         style={({ pressed }) => [
           styles.button,
@@ -92,6 +107,19 @@ export const HatchScreen: React.FC<Props> = ({
           {busy ? 'HATCHING…' : `GET AN EGG · ✦ ${cost}`}
         </Text>
       </Pressable>
+      {canUseShards && (
+        <Pressable
+          onPress={() => submit(true)}
+          disabled={busy}
+          style={({ pressed }) => [
+            styles.shardButton,
+            busy && styles.buttonDisabled,
+            !busy && pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={styles.buttonText}>🥚 HATCH WITH SHARDS · FREE</Text>
+        </Pressable>
+      )}
       {error && <Text style={styles.hint}>{error}</Text>}
       {!affordable && (
         <Text style={styles.hint}>
@@ -212,6 +240,15 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     paddingHorizontal: 30,
     paddingVertical: 14,
+  },
+  shardButton: {
+    backgroundColor: '#3a7d4f',
+    borderWidth: 3,
+    borderColor: '#fff',
+    borderRadius: 4,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    marginTop: 12,
   },
   buttonPressed: {
     transform: [{ translateY: 2 }],

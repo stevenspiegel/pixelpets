@@ -21,3 +21,15 @@ export const DECOR_ART: Record<string, ImageSourcePropType> = {
 
 export const decorArt = (id: string): ImageSourcePropType | undefined =>
   DECOR_ART[id];
+
+// PNG art for Phase 2 buildings, keyed by building id in src/state/base.ts.
+// Falls back to the catalog glyph when an id is missing (same pattern as decor).
+export const BUILDING_ART: Record<string, ImageSourcePropType> = {
+  mine: require('../../assets/base/mine.png'),
+  incubator: require('../../assets/base/incubator.png'),
+  feeder: require('../../assets/base/feeder.png'),
+  vault: require('../../assets/base/vault.png'),
+};
+
+export const buildingArt = (id: string): ImageSourcePropType | undefined =>
+  BUILDING_ART[id];

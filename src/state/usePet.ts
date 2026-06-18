@@ -752,12 +752,14 @@ export const usePet = (userId: string | null) => {
     return () => clearInterval(id);
   }, []);
 
-  const hatch = useCallback(async (name: string): Promise<HatchResult> => {
+  const hatch = useCallback(async (name: string, useShards = false): Promise<HatchResult> => {
     if (!userRef.current) return { ok: false, error: 'Not signed in' };
     if (isSupabaseConfigured) {
       // Server rolls the species/rarity/stats, charges the egg cost, and inserts
       // the pet — nothing about it is client-supplied, so it can't be forged.
-      const { data, error } = await supabase!.rpc('hatch_pet', { p_name: name });
+      // useShards funds the egg from accrued egg_shards (150 = 1 free egg)
+      // instead of tokens; the server enforces the balance either way.
+      const { data, error } = await supabase!.rpc('hatch_pet', { p_name: name, p_use_shards: useShards });
       if (error) {
         // Surface the reason (e.g. "Your collection is full", "Not enough
         // tokens") instead of failing silently.

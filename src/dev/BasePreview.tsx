@@ -30,6 +30,13 @@ const SAMPLE_BASE: BaseState = {
   pets: [],
   floor: 'grass',
   fuel: {},
+  // One building ready to collect (mine, backdated 6h) and one still on cooldown
+  // (vault, just collected) so the harness exercises both badge states.
+  buildings: {
+    mine: { level: 2, x: 2, y: 1, collectedAt: Date.now() - 6 * 3600 * 1000 },
+    vault: { level: 1, x: 3, y: 1, collectedAt: Date.now() },
+  },
+  eggShards: 45,
 };
 
 export const BasePreview: React.FC = () => (

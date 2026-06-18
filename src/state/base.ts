@@ -71,6 +71,80 @@ export const DECAY_MULT = 0.6;                // fueled item → 40% slower deca
 export const functionalStat = (id: string): CareStat | undefined =>
   FUNCTIONAL_DECOR[id];
 
+// ── Phase 2: token buildings ────────────────────────────────────────────────
+// One-of-each, upgradeable structures placed on the grid that passively accrue
+// over time, collected on a tap. Display catalog only — prices/rates/caps are
+// re-validated server-side (_building_* in supabase/schema.sql is source of truth).
+export type BuildingId = 'mine' | 'incubator' | 'feeder' | 'vault';
+
+export const EGG_SHARDS_PER_EGG = 150; // mirrors hatch_pet shard cost
+
+export type BuildingDef = {
+  id: BuildingId;
+  name: string;
+  glyph: string;                 // temporary placeholder until art is wired
+  buildCost: number;
+  maxLevel: number;
+  kind: 'accrual' | 'cooldown';
+  unit: 'tokens' | 'shards' | 'care';
+  ready: string;                 // emoji shown on the readiness badge
+  ratePerHour: (level: number) => number; // accrual buildings (display)
+  cap: (level: number) => number;         // accrual reservoir cap
+  cooldownMs: (level: number) => number;  // cooldown buildings
+  upgradeCost: (level: number) => number | null; // null = maxed
+};
+
+const HOUR = 3600 * 1000;
+const upCost = (level: number): number | null =>
+  level === 1 ? 80 : level === 2 ? 160 : null;
+
+export const BUILDINGS: BuildingDef[] = [
+  {
+    id: 'mine', name: 'Token Mine', glyph: '⛏️', buildCost: 150, maxLevel: 3,
+    kind: 'accrual', unit: 'tokens', ready: '💰',
+    ratePerHour: (l) => [0, 1, 1.5, 2][l] ?? 0,
+    cap: (l) => [0, 12, 20, 30][l] ?? 0,
+    cooldownMs: () => 0, upgradeCost: upCost,
+  },
+  {
+    id: 'incubator', name: 'Egg Incubator', glyph: '🥚', buildCost: 200, maxLevel: 3,
+    kind: 'accrual', unit: 'shards', ready: '🥚',
+    ratePerHour: (l) => [0, 1, 1.5, 2][l] ?? 0,
+    cap: (l) => [0, 12, 20, 30][l] ?? 0,
+    cooldownMs: () => 0, upgradeCost: upCost,
+  },
+  {
+    id: 'feeder', name: 'Care Feeder', glyph: '🍼', buildCost: 120, maxLevel: 3,
+    kind: 'cooldown', unit: 'care', ready: '❤️',
+    ratePerHour: () => 0, cap: () => 0,
+    cooldownMs: (l) => ([0, 12, 8, 6][l] ?? 0) * HOUR,
+    upgradeCost: upCost,
+  },
+  {
+    id: 'vault', name: 'Treasure Vault', glyph: '🎁', buildCost: 250, maxLevel: 3,
+    kind: 'cooldown', unit: 'tokens', ready: '🎁',
+    ratePerHour: () => 0, cap: () => 0,
+    cooldownMs: (l) => ([0, 24, 20, 16][l] ?? 0) * HOUR,
+    upgradeCost: upCost,
+  },
+];
+
+export const buildingById = (id: string): BuildingDef | undefined =>
+  BUILDINGS.find((b) => b.id === id);
+
+// How much an accrual building has produced since last collect (client estimate
+// for the readiness badge; the server re-computes authoritatively on collect).
+export const accrued = (def: BuildingDef, st: BuildingState, now: number): number =>
+  Math.min(def.cap(st.level), Math.floor(((now - st.collectedAt) / HOUR) * def.ratePerHour(st.level)));
+
+// Whether a building is collectible right now (badge logic).
+export const isReady = (def: BuildingDef, st: BuildingState, now: number): boolean =>
+  def.kind === 'accrual'
+    ? accrued(def, st, now) >= 1
+    : now - st.collectedAt >= def.cooldownMs(st.level);
+
+export type BuildingState = { level: number; x: number; y: number; collectedAt: number };
+
 export type Placed = { id: string; x: number; y: number };
 export type PlacedPet = { petId: string; x: number; y: number };
 
@@ -80,6 +154,8 @@ export type BaseState = {
   pets: PlacedPet[];
   floor: string;
   fuel: Record<string, number>; // decor id → filled_until (epoch ms)
+  buildings: Record<string, BuildingState>;
+  eggShards: number;
 };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -88,14 +164,14 @@ const cleanError = (msg: string): string =>
   msg.includes(':') ? msg.slice(msg.lastIndexOf(':') + 1).trim() : msg;
 
 export const fetchBase = async (): Promise<BaseState> => {
-  const fallback: BaseState = { owned: [], layout: [], pets: [], floor: 'grass', fuel: {} };
+  const fallback: BaseState = { owned: [], layout: [], pets: [], floor: 'grass', fuel: {}, buildings: {}, eggShards: 0 };
   if (!supabase) return fallback;
   const { data: sess } = await supabase.auth.getSession();
   const uid = sess.session?.user?.id;
   if (!uid) return fallback;
   const { data, error } = await supabase
     .from('profiles')
-    .select('base_decor_owned, base_layout, base_pets, base_floor, base_fuel')
+    .select('base_decor_owned, base_layout, base_pets, base_floor, base_fuel, base_buildings, egg_shards')
     .eq('id', uid)
     .maybeSingle();
   if (error || !data) {
@@ -110,6 +186,8 @@ export const fetchBase = async (): Promise<BaseState> => {
     pets: (d.base_pets as PlacedPet[]) ?? [],
     floor: (d.base_floor as string) ?? 'grass',
     fuel: (d.base_fuel as Record<string, number>) ?? {},
+    buildings: (d.base_buildings as Record<string, BuildingState>) ?? {},
+    eggShards: Number(d.egg_shards ?? 0),
   };
 };
 
@@ -155,4 +233,42 @@ export const saveBaseLayout = async (
   });
   if (error) return { ok: false, error: cleanError(error.message) };
   return { ok: true, value: null };
+};
+
+// Build / upgrade / collect a structure. Server charges + computes yield; the
+// client only triggers and reads back the new wallet + buildings map.
+export const buildStructure = async (
+  type: BuildingId, x: number, y: number
+): Promise<Result<{ tokens: number; buildings: Record<string, BuildingState> }>> => {
+  if (!supabase) return { ok: false, error: 'Not connected' };
+  const { data, error } = await supabase.rpc('build_structure', { p_type: type, p_x: x, p_y: y });
+  if (error) return { ok: false, error: cleanError(error.message) };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const d = data as any;
+  return { ok: true, value: { tokens: Number(d.tokens), buildings: (d.base_buildings ?? {}) } };
+};
+
+export const upgradeStructure = async (
+  type: BuildingId
+): Promise<Result<{ tokens: number; eggShards: number; buildings: Record<string, BuildingState> }>> => {
+  if (!supabase) return { ok: false, error: 'Not connected' };
+  const { data, error } = await supabase.rpc('upgrade_structure', { p_type: type });
+  if (error) return { ok: false, error: cleanError(error.message) };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const d = data as any;
+  return { ok: true, value: { tokens: Number(d.tokens), eggShards: Number(d.egg_shards), buildings: (d.base_buildings ?? {}) } };
+};
+
+export const collectStructure = async (
+  type: BuildingId
+): Promise<Result<{ tokens: number; eggShards: number; buildings: Record<string, BuildingState>; yield: number }>> => {
+  if (!supabase) return { ok: false, error: 'Not connected' };
+  const { data, error } = await supabase.rpc('collect_structure', { p_type: type });
+  if (error) return { ok: false, error: cleanError(error.message) };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const d = data as any;
+  return { ok: true, value: {
+    tokens: Number(d.tokens), eggShards: Number(d.egg_shards),
+    buildings: (d.base_buildings ?? {}), yield: Number(d.yield ?? 0),
+  } };
 };

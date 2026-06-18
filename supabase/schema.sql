@@ -598,6 +598,234 @@ begin
 end; $$;
 revoke execute on function public._base_care_mult(uuid) from public, anon, authenticated;
 
+-- ── Phase 2: token buildings ──────────────────────────────────────────────────
+-- One-of-each, upgradeable structures placed on the habitat grid that passively
+-- accrue over time, collected on a tap. State lives in base_buildings jsonb keyed
+-- by type: { "<type>": { level, x, y, collected_at } }. collected_at is epoch ms
+-- (same unit as base_fuel). Accrued yield is NEVER stored — it's derived server-
+-- side from now()-elapsed at collect time (cheat-proof), exactly like refill_decor.
+-- The catalog below is the source of truth; src/state/base.ts BUILDINGS mirrors it.
+alter table public.profiles
+  add column if not exists base_buildings jsonb   not null default '{}'::jsonb,
+  add column if not exists egg_shards     integer not null default 0;
+
+create or replace function public._building_types() returns text[]
+  language sql immutable as $$ select array['mine','incubator','feeder','vault'] $$;
+
+create or replace function public._building_max_level(p_type text) returns integer
+  language sql immutable as $$ select 3 $$;   -- 3 levels each (first build)
+
+create or replace function public._building_build_cost(p_type text) returns integer
+  language sql immutable as $$
+  select case p_type
+    when 'mine' then 150 when 'incubator' then 200
+    when 'feeder' then 120 when 'vault' then 250 else null end;
+$$;
+
+-- Tokens to go from p_level → p_level+1; null when already at max level.
+create or replace function public._building_upgrade_cost(p_type text, p_level integer) returns integer
+  language sql immutable as $$
+  select case p_level when 1 then 80 when 2 then 160 else null end;
+$$;
+
+-- Accrual rate in UNITS PER MILLISECOND (mine→tokens, incubator→shards).
+-- Per-hour rates L1 1 / L2 1.5 / L3 2, divided by 3,600,000.
+create or replace function public._building_rate(p_type text, p_level integer) returns double precision
+  language sql immutable as $$
+  select (case p_level when 1 then 1.0 when 2 then 1.5 when 3 then 2.0 else 0 end) / 3600000.0;
+$$;
+
+-- Reservoir cap (max accrued units between collects) for accrual buildings.
+create or replace function public._building_cap(p_type text, p_level integer) returns integer
+  language sql immutable as $$
+  select case p_level when 1 then 12 when 2 then 20 when 3 then 30 else 0 end;
+$$;
+
+-- Cooldown in ms for cooldown buildings (feeder, vault).
+create or replace function public._building_cooldown_ms(p_type text, p_level integer) returns bigint
+  language sql immutable as $$
+  select ((case p_type
+    when 'feeder' then (case p_level when 1 then 12 when 2 then 8  when 3 then 6  else 0 end)
+    when 'vault'  then (case p_level when 1 then 24 when 2 then 20 when 3 then 16 else 0 end)
+    else 0 end) * 3600 * 1000)::bigint;
+$$;
+
+-- Feeder: fraction (0..1) each care stat is topped up by, per level.
+create or replace function public._building_feeder_pct(p_level integer) returns double precision
+  language sql immutable as $$
+  select case p_level when 1 then 0.40 when 2 then 0.70 when 3 then 1.0 else 0 end;
+$$;
+
+-- Vault: random chest payout in tokens within the level's range. Server-rolled
+-- (volatile), like slot_spin — the client can never request an amount.
+create or replace function public._building_vault_roll(p_level integer) returns integer
+  language plpgsql volatile as $$
+  declare lo int; hi int;
+  begin
+    case p_level
+      when 1 then lo := 5;  hi := 25;
+      when 2 then lo := 10; hi := 40;
+      when 3 then lo := 15; hi := 60;
+      else lo := 0; hi := 0;
+    end case;
+    return lo + floor(random() * (hi - lo + 1))::int;
+  end; $$;
+
+-- These are internal helpers — callable only by the SECURITY DEFINER RPCs below.
+revoke execute on function public._building_types()                       from public, anon, authenticated;
+revoke execute on function public._building_max_level(text)               from public, anon, authenticated;
+revoke execute on function public._building_build_cost(text)              from public, anon, authenticated;
+revoke execute on function public._building_upgrade_cost(text, integer)   from public, anon, authenticated;
+revoke execute on function public._building_rate(text, integer)           from public, anon, authenticated;
+revoke execute on function public._building_cap(text, integer)            from public, anon, authenticated;
+revoke execute on function public._building_cooldown_ms(text, integer)    from public, anon, authenticated;
+revoke execute on function public._building_feeder_pct(integer)           from public, anon, authenticated;
+revoke execute on function public._building_vault_roll(integer)           from public, anon, authenticated;
+
+-- Build a structure: validate type, that it isn't already built, grid bounds, and
+-- that the target cell is free of decor and other buildings; charge the build cost
+-- atomically; insert at level 1 with collected_at = now. Returns wallet + buildings.
+create or replace function public.build_structure(p_type text, p_x integer, p_y integer)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me     uuid := auth.uid();
+  grid   integer := public._base_grid();
+  cost   integer := public._building_build_cost(p_type);
+  now_ms bigint := (extract(epoch from now()) * 1000)::bigint;
+  bal    integer;
+  blds   jsonb;
+  lay    jsonb;
+  ent    jsonb;
+begin
+  if cost is null then raise exception 'Unknown building'; end if;
+  if p_x < 0 or p_y < 0 or p_x >= grid or p_y >= grid then raise exception 'Off-grid placement'; end if;
+  select tokens, base_buildings, base_layout into bal, blds, lay
+    from public.profiles where id = me for update;
+  if blds ? p_type then raise exception 'Already built'; end if;
+  if exists (
+    select 1 from jsonb_array_elements(lay) as it
+    where (it->>'x')::int = p_x and (it->>'y')::int = p_y
+  ) then raise exception 'Cell occupied'; end if;
+  for ent in select value from jsonb_each(blds) loop
+    if (ent->>'x')::int = p_x and (ent->>'y')::int = p_y then raise exception 'Cell occupied'; end if;
+  end loop;
+  if bal < cost then raise exception 'Not enough tokens'; end if;
+  blds := jsonb_set(blds, array[p_type],
+    jsonb_build_object('level', 1, 'x', p_x, 'y', p_y, 'collected_at', now_ms), true);
+  update public.profiles set tokens = tokens - cost, base_buildings = blds
+    where id = me returning tokens into bal;
+  return jsonb_build_object('tokens', bal, 'base_buildings', blds);
+end; $$;
+grant execute on function public.build_structure(text, integer, integer) to authenticated;
+
+-- Collect a structure's accrued yield and reset collected_at to now.
+--   mine      → tokens += min(cap, floor(elapsed_ms * rate))
+--   incubator → egg_shards += min(cap, floor(elapsed_ms * rate))
+--   vault     → tokens += server-rolled chest (only once cooldown elapsed)
+--   feeder    → top up every owned pet's care stats by the level's % (cooldown-gated)
+-- Returns wallet + shards + buildings + the yield amount (0 for feeder).
+create or replace function public.collect_structure(p_type text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me      uuid := auth.uid();
+  now_ms  bigint := (extract(epoch from now()) * 1000)::bigint;
+  bal     integer;
+  shards  integer;
+  blds    jsonb;
+  b       jsonb;
+  lvl     integer;
+  coll    bigint;
+  elapsed bigint;
+  yield   integer := 0;
+  pct     double precision;
+begin
+  select tokens, egg_shards, base_buildings into bal, shards, blds
+    from public.profiles where id = me for update;
+  b := blds -> p_type;
+  if b is null then raise exception 'Not built'; end if;
+  lvl  := (b->>'level')::int;
+  coll := (b->>'collected_at')::bigint;
+  elapsed := greatest(0, now_ms - coll);
+
+  if p_type = 'mine' then
+    yield := least(public._building_cap(p_type, lvl), floor(elapsed * public._building_rate(p_type, lvl))::int);
+    if yield <= 0 then raise exception 'Nothing to collect yet'; end if;
+    bal := bal + yield;
+  elsif p_type = 'incubator' then
+    yield := least(public._building_cap(p_type, lvl), floor(elapsed * public._building_rate(p_type, lvl))::int);
+    if yield <= 0 then raise exception 'Nothing to collect yet'; end if;
+    shards := shards + yield;
+  elsif p_type = 'vault' then
+    if elapsed < public._building_cooldown_ms(p_type, lvl) then raise exception 'Not ready'; end if;
+    yield := public._building_vault_roll(lvl);
+    bal := bal + yield;
+  elsif p_type = 'feeder' then
+    if elapsed < public._building_cooldown_ms(p_type, lvl) then raise exception 'Not ready'; end if;
+    pct := public._building_feeder_pct(lvl);
+    update public.pets set
+      hunger      = least(100, hunger      + 100 * pct),
+      happiness   = least(100, happiness   + 100 * pct),
+      cleanliness = least(100, cleanliness + 100 * pct),
+      energy      = least(100, energy      + 100 * pct)
+    where owner = me;
+  else
+    raise exception 'Unknown building';
+  end if;
+
+  blds := jsonb_set(blds, array[p_type, 'collected_at'], to_jsonb(now_ms));
+  update public.profiles set tokens = bal, egg_shards = shards, base_buildings = blds where id = me;
+  return jsonb_build_object('tokens', bal, 'egg_shards', shards, 'base_buildings', blds, 'yield', yield);
+end; $$;
+grant execute on function public.collect_structure(text) to authenticated;
+
+-- Upgrade a structure one level. Banks any pending accrual at the CURRENT level
+-- first (so the higher rate can't apply retroactively), then charges the upgrade
+-- cost and bumps the level, resetting collected_at. Returns wallet + shards + buildings.
+create or replace function public.upgrade_structure(p_type text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me      uuid := auth.uid();
+  now_ms  bigint := (extract(epoch from now()) * 1000)::bigint;
+  bal     integer;
+  shards  integer;
+  blds    jsonb;
+  b       jsonb;
+  lvl     integer;
+  coll    bigint;
+  elapsed bigint;
+  cost    integer;
+begin
+  select tokens, egg_shards, base_buildings into bal, shards, blds
+    from public.profiles where id = me for update;
+  b := blds -> p_type;
+  if b is null then raise exception 'Not built'; end if;
+  lvl  := (b->>'level')::int;
+  cost := public._building_upgrade_cost(p_type, lvl);
+  if cost is null then raise exception 'Already max level'; end if;
+  if bal < cost then raise exception 'Not enough tokens'; end if;
+  coll := (b->>'collected_at')::bigint;
+  elapsed := greatest(0, now_ms - coll);
+  if p_type = 'mine' then
+    bal := bal + least(public._building_cap(p_type, lvl), floor(elapsed * public._building_rate(p_type, lvl))::int);
+  elsif p_type = 'incubator' then
+    shards := shards + least(public._building_cap(p_type, lvl), floor(elapsed * public._building_rate(p_type, lvl))::int);
+  end if;
+  bal := bal - cost;
+  blds := jsonb_set(blds, array[p_type, 'level'], to_jsonb(lvl + 1));
+  -- Accrual buildings (mine/incubator) had their reservoir banked above, so reset
+  -- the clock. Cooldown buildings (vault/feeder) keep their collected_at so an
+  -- in-progress cooldown carries into the new (usually shorter) level cooldown.
+  if p_type in ('mine', 'incubator') then
+    blds := jsonb_set(blds, array[p_type, 'collected_at'], to_jsonb(now_ms));
+  end if;
+  update public.profiles set tokens = bal, egg_shards = shards, base_buildings = blds where id = me;
+  return jsonb_build_object('tokens', bal, 'egg_shards', shards, 'base_buildings', blds);
+end; $$;
+grant execute on function public.upgrade_structure(text) to authenticated;
+
 -- Save the base layout. Validates that every placed item is OWNED, every id is a
 -- real decoration (not a floor), coordinates are within the grid, and the item
 -- count is capped — so a client can't place items it didn't buy or flood the row.
@@ -615,6 +843,8 @@ language plpgsql security definer set search_path = public as $$
 declare
   me    uuid := auth.uid();
   owned text[];
+  blds  jsonb;
+  ent   jsonb;
   grid  integer := public._base_grid();
   item  jsonb;
   iid   text;
@@ -626,7 +856,7 @@ begin
   if jsonb_array_length(p_layout) > public._base_max_items() then
     raise exception 'Too many items';
   end if;
-  select base_decor_owned into owned from public.profiles where id = me;
+  select base_decor_owned, base_buildings into owned, blds from public.profiles where id = me;
 
   for item in select * from jsonb_array_elements(p_layout) loop
     iid := item->>'id';
@@ -639,6 +869,11 @@ begin
     if ix < 0 or iy < 0 or ix >= grid or iy >= grid then
       raise exception 'Off-grid placement';
     end if;
+    for ent in select value from jsonb_each(blds) loop
+      if (ent->>'x')::int = ix and (ent->>'y')::int = iy then
+        raise exception 'Cell has a building';
+      end if;
+    end loop;
   end loop;
 
   -- Pet placements: each must be one of the caller's own pets, within the grid.
@@ -1049,16 +1284,24 @@ revoke insert on public.pets from anon, authenticated;
 -- rarity, level (beyond the stage cap), and tokens can no longer be forged.
 
 -- Replace the step-1 hatch (which trusted a client-built pet) with one that
--- generates everything server-side. Returns { pet, tokens }.
+-- generates everything server-side. Returns { pet, tokens, egg_shards }.
+--
+-- p_use_shards funds the egg from the Egg Incubator's accrued egg_shards
+-- (Phase 2) instead of tokens: 150 shards = 1 free egg. The two-arg signature
+-- replaces the old one-arg form; `default false` keeps existing one-arg client
+-- calls (rpc('hatch_pet', { p_name })) resolving here. Must drop the one-arg
+-- form first, else `hatch_pet('x')` is ambiguous across the two overloads.
 drop function if exists public.hatch_pet(jsonb);
+drop function if exists public.hatch_pet(text);
 
-create or replace function public.hatch_pet(p_name text)
+create or replace function public.hatch_pet(p_name text, p_use_shards boolean default false)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
   me      uuid := auth.uid();
-  cost    integer := 150;        -- EGG_COST
+  cost    integer := 150;        -- EGG_COST / EGG_SHARDS_PER_EGG
   bal     integer;
+  shards  integer;
   owned   integer;
   nm      text := coalesce(nullif(btrim(p_name), ''), 'Pixel');
   key     text := lower(btrim(coalesce(p_name, '')));
@@ -1074,8 +1317,12 @@ declare
 begin
   select count(*) into owned from public.pets where owner = me;
   if owned >= public.market_max_pets() then raise exception 'Your collection is full'; end if;
-  select tokens into bal from public.profiles where id = me for update;
-  if bal < cost then raise exception 'Not enough tokens'; end if;
+  select tokens, egg_shards into bal, shards from public.profiles where id = me for update;
+  if p_use_shards then
+    if shards < cost then raise exception 'Not enough egg shards'; end if;
+  elsif bal < cost then
+    raise exception 'Not enough tokens';
+  end if;
 
   -- Easter-egg names force a species; otherwise roll rarity by weight
   -- (common 60 / uncommon 25 / rare 10 / epic 4 / legendary 1, total 100).
@@ -1113,10 +1360,16 @@ begin
     70, 70, 90, 80, 100, 0, now_ms, now_ms, false, 0, false, false
   ) returning * into pet_row;
 
-  update public.profiles set tokens = tokens - cost, active_pet_id = pid where id = me;
-  return jsonb_build_object('pet', to_jsonb(pet_row), 'tokens', bal - cost);
+  -- Charge from shards (tokens unchanged) or tokens, depending on the path.
+  if p_use_shards then
+    update public.profiles set egg_shards = egg_shards - cost, active_pet_id = pid where id = me;
+    return jsonb_build_object('pet', to_jsonb(pet_row), 'tokens', bal, 'egg_shards', shards - cost);
+  else
+    update public.profiles set tokens = tokens - cost, active_pet_id = pid where id = me;
+    return jsonb_build_object('pet', to_jsonb(pet_row), 'tokens', bal - cost, 'egg_shards', shards);
+  end if;
 end; $$;
-grant execute on function public.hatch_pet(text) to authenticated;
+grant execute on function public.hatch_pet(text, boolean) to authenticated;
 
 -- Ascend a dragon/unicorn at adulthood (one-way). ascended is otherwise locked.
 create or replace function public.ascend_pet(p_pet_id text)
