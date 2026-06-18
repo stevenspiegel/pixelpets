@@ -11,3 +11,4 @@ yarn-error.*
 .env.local
 ios/
 android/
+.art-src/
