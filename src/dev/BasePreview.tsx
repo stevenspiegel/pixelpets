@@ -30,6 +30,8 @@ const SAMPLE_BASE: BaseState = {
   pets: [],
   floor: 'grass',
   fuel: {},
+  buildings: {},
+  eggShards: 0,
 };
 
 export const BasePreview: React.FC = () => (
