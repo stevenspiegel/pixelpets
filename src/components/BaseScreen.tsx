@@ -30,6 +30,9 @@ import {
   isReady,
   collectStructure,
   BuildingState,
+  BUILDINGS,
+  buildStructure,
+  upgradeStructure,
 } from '../state/base';
 import { CreatureSprite } from './CreatureSprite';
 
@@ -142,6 +145,26 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
       setDirty(true);
       return;
     }
+    if (selected.startsWith('build:')) {
+      const type = selected.slice(6);
+      if (busy) return;
+      // Reject locally if the cell is taken (server also enforces this).
+      if (layout.some((p) => p.x === x && p.y === y) ||
+          Object.values(buildings).some((b) => b.x === x && b.y === y)) {
+        setError('Cell occupied');
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      buildStructure(type as any, x, y).then((res) => {
+        setBusy(false);
+        if (!res.ok) { setError(res.error); return; }
+        setBuildings(res.value.buildings);
+        onWalletChange(res.value.tokens);
+        setSelected(null);
+      });
+      return;
+    }
     setLayout((l) => {
       const without = l.filter((p) => !(p.x === x && p.y === y)); // one item per cell
       return [...without, { id: selected, x, y }];
@@ -199,6 +222,24 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
     setEggShards(res.value.eggShards);
     onWalletChange(res.value.tokens);
     setNow(Date.now());
+  };
+
+  const onBuildSelect = (id: string) => {
+    // Selecting an unbuilt building arms placement; the actual build happens on
+    // the first tile tap (see onCell). Owned buildings can't be re-placed.
+    setSelected(`build:${id}`);
+  };
+
+  const onUpgrade = async (id: string) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await upgradeStructure(id as any);
+    setBusy(false);
+    if (!res.ok) { setError(res.error); return; }
+    setBuildings(res.value.buildings);
+    setEggShards(res.value.eggShards);
+    onWalletChange(res.value.tokens);
   };
 
   const onSave = async () => {
@@ -335,7 +376,9 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
                 </Pressable>
               </View>
               <Text style={styles.hint}>
-                {selected === 'erase'
+                {selected?.startsWith('build:')
+                  ? 'Tap an empty tile to build it here.'
+                  : selected === 'erase'
                   ? 'Tap a tile to clear its decoration or pet.'
                   : selected?.startsWith('pet:')
                   ? 'Tap a tile to move this pet there.'
@@ -427,6 +470,48 @@ export const BaseScreen: React.FC<Props> = ({ pets, tokens, onWalletChange, onEx
                           >
                             <Text style={styles.refillBtnText}>Refill ({REFILL_COST})</Text>
                           </Pressable>
+                        </>
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {/* Buildings: one-of-each, upgradeable. Unbuilt → arm placement;
+                  built → show level + Upgrade. */}
+              <Text style={styles.shopHeader}>BUILDINGS</Text>
+              {eggShards > 0 && (
+                <Text style={styles.fuelText}>🥚 shards: {eggShards}/150 toward a free egg</Text>
+              )}
+              <View style={styles.shopGrid}>
+                {BUILDINGS.map((b) => {
+                  const st = buildings[b.id];
+                  const active = selected === `build:${b.id}`;
+                  const upCost = st ? b.upgradeCost(st.level) : null;
+                  return (
+                    <Pressable
+                      key={b.id}
+                      onPress={() => (st ? undefined : onBuildSelect(b.id))}
+                      style={[styles.shopCard, active && styles.shopCardActive]}
+                    >
+                      <BuildingIcon id={b.id} size={34} />
+                      <Text style={styles.shopName} numberOfLines={1}>{b.name}</Text>
+                      {!st ? (
+                        <Text style={styles.shopPrice}>{active ? 'TAP TILE' : `✦ ${b.buildCost}`}</Text>
+                      ) : (
+                        <>
+                          <Text style={styles.shopPrice}>Lv {st.level}</Text>
+                          {upCost != null ? (
+                            <Pressable
+                              onPress={() => onUpgrade(b.id)}
+                              disabled={busy || tokens < upCost}
+                              style={[styles.refillBtn, (busy || tokens < upCost) && styles.refillBtnDisabled]}
+                            >
+                              <Text style={styles.refillBtnText}>Upgrade ({upCost})</Text>
+                            </Pressable>
+                          ) : (
+                            <Text style={styles.fuelText}>MAX</Text>
+                          )}
                         </>
                       )}
                     </Pressable>
