@@ -682,6 +682,145 @@ revoke execute on function public._building_cooldown_ms(text, integer)    from p
 revoke execute on function public._building_feeder_pct(integer)           from public, anon, authenticated;
 revoke execute on function public._building_vault_roll(integer)           from public, anon, authenticated;
 
+-- Build a structure: validate type, that it isn't already built, grid bounds, and
+-- that the target cell is free of decor and other buildings; charge the build cost
+-- atomically; insert at level 1 with collected_at = now. Returns wallet + buildings.
+create or replace function public.build_structure(p_type text, p_x integer, p_y integer)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me     uuid := auth.uid();
+  grid   integer := public._base_grid();
+  cost   integer := public._building_build_cost(p_type);
+  now_ms bigint := (extract(epoch from now()) * 1000)::bigint;
+  bal    integer;
+  blds   jsonb;
+  lay    jsonb;
+  ent    jsonb;
+begin
+  if cost is null then raise exception 'Unknown building'; end if;
+  if p_x < 0 or p_y < 0 or p_x >= grid or p_y >= grid then raise exception 'Off-grid placement'; end if;
+  select tokens, base_buildings, base_layout into bal, blds, lay
+    from public.profiles where id = me for update;
+  if blds ? p_type then raise exception 'Already built'; end if;
+  if exists (
+    select 1 from jsonb_array_elements(lay) as it
+    where (it->>'x')::int = p_x and (it->>'y')::int = p_y
+  ) then raise exception 'Cell occupied'; end if;
+  for ent in select value from jsonb_each(blds) loop
+    if (ent->>'x')::int = p_x and (ent->>'y')::int = p_y then raise exception 'Cell occupied'; end if;
+  end loop;
+  if bal < cost then raise exception 'Not enough tokens'; end if;
+  blds := jsonb_set(blds, array[p_type],
+    jsonb_build_object('level', 1, 'x', p_x, 'y', p_y, 'collected_at', now_ms), true);
+  update public.profiles set tokens = tokens - cost, base_buildings = blds
+    where id = me returning tokens into bal;
+  return jsonb_build_object('tokens', bal, 'base_buildings', blds);
+end; $$;
+grant execute on function public.build_structure(text, integer, integer) to authenticated;
+
+-- Collect a structure's accrued yield and reset collected_at to now.
+--   mine      → tokens += min(cap, floor(elapsed_ms * rate))
+--   incubator → egg_shards += min(cap, floor(elapsed_ms * rate))
+--   vault     → tokens += server-rolled chest (only once cooldown elapsed)
+--   feeder    → top up every owned pet's care stats by the level's % (cooldown-gated)
+-- Returns wallet + shards + buildings + the yield amount (0 for feeder).
+create or replace function public.collect_structure(p_type text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me      uuid := auth.uid();
+  now_ms  bigint := (extract(epoch from now()) * 1000)::bigint;
+  bal     integer;
+  shards  integer;
+  blds    jsonb;
+  b       jsonb;
+  lvl     integer;
+  coll    bigint;
+  elapsed bigint;
+  yield   integer := 0;
+  pct     double precision;
+begin
+  select tokens, egg_shards, base_buildings into bal, shards, blds
+    from public.profiles where id = me for update;
+  b := blds -> p_type;
+  if b is null then raise exception 'Not built'; end if;
+  lvl  := (b->>'level')::int;
+  coll := (b->>'collected_at')::bigint;
+  elapsed := greatest(0, now_ms - coll);
+
+  if p_type = 'mine' then
+    yield := least(public._building_cap(p_type, lvl), floor(elapsed * public._building_rate(p_type, lvl))::int);
+    if yield <= 0 then raise exception 'Nothing to collect yet'; end if;
+    bal := bal + yield;
+  elsif p_type = 'incubator' then
+    yield := least(public._building_cap(p_type, lvl), floor(elapsed * public._building_rate(p_type, lvl))::int);
+    if yield <= 0 then raise exception 'Nothing to collect yet'; end if;
+    shards := shards + yield;
+  elsif p_type = 'vault' then
+    if elapsed < public._building_cooldown_ms(p_type, lvl) then raise exception 'Not ready'; end if;
+    yield := public._building_vault_roll(lvl);
+    bal := bal + yield;
+  elsif p_type = 'feeder' then
+    if elapsed < public._building_cooldown_ms(p_type, lvl) then raise exception 'Not ready'; end if;
+    pct := public._building_feeder_pct(lvl);
+    update public.pets set
+      hunger      = least(100, hunger      + 100 * pct),
+      happiness   = least(100, happiness   + 100 * pct),
+      cleanliness = least(100, cleanliness + 100 * pct),
+      energy      = least(100, energy      + 100 * pct)
+    where owner = me;
+  else
+    raise exception 'Unknown building';
+  end if;
+
+  blds := jsonb_set(blds, array[p_type, 'collected_at'], to_jsonb(now_ms));
+  update public.profiles set tokens = bal, egg_shards = shards, base_buildings = blds where id = me;
+  return jsonb_build_object('tokens', bal, 'egg_shards', shards, 'base_buildings', blds, 'yield', yield);
+end; $$;
+grant execute on function public.collect_structure(text) to authenticated;
+
+-- Upgrade a structure one level. Banks any pending accrual at the CURRENT level
+-- first (so the higher rate can't apply retroactively), then charges the upgrade
+-- cost and bumps the level, resetting collected_at. Returns wallet + shards + buildings.
+create or replace function public.upgrade_structure(p_type text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  me      uuid := auth.uid();
+  now_ms  bigint := (extract(epoch from now()) * 1000)::bigint;
+  bal     integer;
+  shards  integer;
+  blds    jsonb;
+  b       jsonb;
+  lvl     integer;
+  coll    bigint;
+  elapsed bigint;
+  cost    integer;
+begin
+  select tokens, egg_shards, base_buildings into bal, shards, blds
+    from public.profiles where id = me for update;
+  b := blds -> p_type;
+  if b is null then raise exception 'Not built'; end if;
+  lvl  := (b->>'level')::int;
+  cost := public._building_upgrade_cost(p_type, lvl);
+  if cost is null then raise exception 'Already max level'; end if;
+  if bal < cost then raise exception 'Not enough tokens'; end if;
+  coll := (b->>'collected_at')::bigint;
+  elapsed := greatest(0, now_ms - coll);
+  if p_type = 'mine' then
+    bal := bal + least(public._building_cap(p_type, lvl), floor(elapsed * public._building_rate(p_type, lvl))::int);
+  elsif p_type = 'incubator' then
+    shards := shards + least(public._building_cap(p_type, lvl), floor(elapsed * public._building_rate(p_type, lvl))::int);
+  end if;
+  bal := bal - cost;
+  blds := jsonb_set(blds, array[p_type, 'level'], to_jsonb(lvl + 1));
+  blds := jsonb_set(blds, array[p_type, 'collected_at'], to_jsonb(now_ms));
+  update public.profiles set tokens = bal, egg_shards = shards, base_buildings = blds where id = me;
+  return jsonb_build_object('tokens', bal, 'egg_shards', shards, 'base_buildings', blds);
+end; $$;
+grant execute on function public.upgrade_structure(text) to authenticated;
+
 -- Save the base layout. Validates that every placed item is OWNED, every id is a
 -- real decoration (not a floor), coordinates are within the grid, and the item
 -- count is capped — so a client can't place items it didn't buy or flood the row.
@@ -699,6 +838,8 @@ language plpgsql security definer set search_path = public as $$
 declare
   me    uuid := auth.uid();
   owned text[];
+  blds  jsonb;
+  ent   jsonb;
   grid  integer := public._base_grid();
   item  jsonb;
   iid   text;
@@ -710,7 +851,7 @@ begin
   if jsonb_array_length(p_layout) > public._base_max_items() then
     raise exception 'Too many items';
   end if;
-  select base_decor_owned into owned from public.profiles where id = me;
+  select base_decor_owned, base_buildings into owned, blds from public.profiles where id = me;
 
   for item in select * from jsonb_array_elements(p_layout) loop
     iid := item->>'id';
@@ -723,6 +864,11 @@ begin
     if ix < 0 or iy < 0 or ix >= grid or iy >= grid then
       raise exception 'Off-grid placement';
     end if;
+    for ent in select value from jsonb_each(blds) loop
+      if (ent->>'x')::int = ix and (ent->>'y')::int = iy then
+        raise exception 'Cell has a building';
+      end if;
+    end loop;
   end loop;
 
   -- Pet placements: each must be one of the caller's own pets, within the grid.
